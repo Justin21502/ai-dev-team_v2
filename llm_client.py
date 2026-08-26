@@ -1,15 +1,17 @@
 """Robust Groq/OpenAI-compatible client for the AI Dev Team.
 
-The project uses Groq because it offers a generous free tier and an
-OpenAI-compatible API. The client intentionally keeps model selection in one
-place and can fall back when a configured model is unavailable.
-
-Token usage from successful API calls is recorded by usage_tracker.py.
+Includes:
+- automatic model fallback
+- retries
+- live streaming
+- exact API-reported token usage
+- per-agent usage tracking
 """
 
 from __future__ import annotations
 
 import os
+import sys
 import time
 from pathlib import Path
 
@@ -18,89 +20,136 @@ from openai import OpenAI
 from usage_tracker import tracker
 
 GROQ_BASE_URL = "https://api.groq.com/openai/v1"
-PRIMARY_MODEL = os.environ.get("AI_TEAM_PRIMARY_MODEL", "openai/gpt-oss-120b")
-FAST_MODEL = os.environ.get("AI_TEAM_FAST_MODEL", "openai/gpt-oss-20b")
-DEFAULT_MODEL = os.environ.get("AI_TEAM_MODEL", PRIMARY_MODEL)
-FALLBACK_MODEL = os.environ.get("AI_TEAM_FALLBACK_MODEL", FAST_MODEL)
-MAX_RETRIES = int(os.environ.get("AI_TEAM_MAX_RETRIES", "2"))
-RETRY_BASE_SECONDS = float(os.environ.get("AI_TEAM_RETRY_BASE_SECONDS", "2"))
+
+PRIMARY_MODEL = os.environ.get(
+    "AI_TEAM_PRIMARY_MODEL",
+    "openai/gpt-oss-120b",
+)
+
+FAST_MODEL = os.environ.get(
+    "AI_TEAM_FAST_MODEL",
+    "openai/gpt-oss-20b",
+)
+
+DEFAULT_MODEL = os.environ.get(
+    "AI_TEAM_MODEL",
+    PRIMARY_MODEL,
+)
+
+FALLBACK_MODEL = os.environ.get(
+    "AI_TEAM_FALLBACK_MODEL",
+    FAST_MODEL,
+)
+
+MAX_RETRIES = int(
+    os.environ.get("AI_TEAM_MAX_RETRIES", "2")
+)
+
+RETRY_BASE_SECONDS = float(
+    os.environ.get("AI_TEAM_RETRY_BASE_SECONDS", "2")
+)
 
 _client: OpenAI | None = None
 _env_loaded = False
 
 
 def _load_dotenv_file() -> None:
-    """Load a local .env without requiring python-dotenv.
-
-    Existing environment variables always win. This makes the Codespace
-    experience work immediately after `cp .env.example .env`, while GitHub
-    Codespaces secrets continue to work normally.
-    """
     global _env_loaded
+
     if _env_loaded:
         return
+
     _env_loaded = True
 
     root = Path(__file__).resolve().parent
     env_file = root / ".env"
+
     if not env_file.exists():
         return
 
     for raw in env_file.read_text().splitlines():
         line = raw.strip()
+
         if not line or line.startswith("#") or "=" not in line:
             continue
+
         key, value = line.split("=", 1)
+
         key = key.strip()
         value = value.strip().strip('"').strip("'")
+
         os.environ.setdefault(key, value)
 
 
 def get_client() -> OpenAI:
     global _client
+
     _load_dotenv_file()
 
     if _client is not None:
         return _client
 
     token = os.environ.get("GROQ_API_KEY")
+
     if not token:
         raise RuntimeError(
             "No GROQ_API_KEY found. Put it in .env or configure it as a "
-            "GitHub Codespaces secret. Get a free key at "
-            "https://console.groq.com/keys"
+            "GitHub Codespaces secret."
         )
 
-    _client = OpenAI(base_url=GROQ_BASE_URL, api_key=token)
+    _client = OpenAI(
+        base_url=GROQ_BASE_URL,
+        api_key=token,
+    )
+
     return _client
 
 
 def _is_retryable(exc: Exception) -> bool:
     status = getattr(exc, "status_code", None)
-    return status in {408, 409, 429, 500, 502, 503, 504}
+
+    return status in {
+        408,
+        409,
+        429,
+        500,
+        502,
+        503,
+        504,
+    }
 
 
 def _is_model_not_found(exc: Exception) -> bool:
     status = getattr(exc, "status_code", None)
     message = str(exc).lower()
-    return status == 404 or "model_not_found" in message or "does not exist" in message
+
+    return (
+        status == 404
+        or "model_not_found" in message
+        or "does not exist" in message
+    )
 
 
-def _request(client: OpenAI, messages, model: str, temperature: float):
-    """Make one request, using conservative output limits for free-tier use."""
+def _request(client, messages, model, temperature):
     kwargs = {
         "model": model,
         "messages": messages,
         "temperature": temperature,
+        "stream": True,
+        "stream_options": {
+            "include_usage": True,
+        },
     }
 
-    # GPT-OSS supports reasoning_effort; don't force it on arbitrary custom
-    # models. The env flag is opt-in so custom model compatibility is preserved.
     if os.environ.get("AI_TEAM_REASONING_EFFORT"):
-        kwargs["reasoning_effort"] = os.environ["AI_TEAM_REASONING_EFFORT"]
+        kwargs["reasoning_effort"] = os.environ[
+            "AI_TEAM_REASONING_EFFORT"
+        ]
 
     if os.environ.get("AI_TEAM_MAX_OUTPUT_TOKENS"):
-        kwargs["max_completion_tokens"] = int(os.environ["AI_TEAM_MAX_OUTPUT_TOKENS"])
+        kwargs["max_completion_tokens"] = int(
+            os.environ["AI_TEAM_MAX_OUTPUT_TOKENS"]
+        )
 
     return client.chat.completions.create(**kwargs)
 
@@ -111,66 +160,153 @@ def chat(
     temperature: float = 0.3,
     agent_name: str = "Unknown",
 ) -> str:
-    """Send a chat completion with retries and automatic model fallback.
+    """Send a streaming chat completion and record exact usage."""
 
-    Successful API responses are recorded in the global token tracker.
-    """
     client = get_client()
+
     requested = model or DEFAULT_MODEL
 
-    candidates: list[str] = [requested]
+    candidates = [requested]
+
     if FALLBACK_MODEL and FALLBACK_MODEL not in candidates:
         candidates.append(FALLBACK_MODEL)
 
-    last_error: Exception | None = None
+    last_error = None
 
     for candidate_index, candidate in enumerate(candidates):
+
         for attempt in range(MAX_RETRIES + 1):
+
             try:
-                response = _request(client, messages, candidate, temperature)
+                stream = _request(
+                    client,
+                    messages,
+                    candidate,
+                    temperature,
+                )
 
-                # Record actual usage returned by the API.
-                usage = getattr(response, "usage", None)
+                pieces = []
+                final_usage = None
 
-                if usage is not None:
-                    input_tokens = getattr(usage, "prompt_tokens", 0) or 0
-                    output_tokens = getattr(usage, "completion_tokens", 0) or 0
-                    total_tokens = getattr(usage, "total_tokens", 0) or 0
+                # Give the terminal a useful status line.
+                print(
+                    f"\n[{agent_name}] {candidate} is generating:",
+                    flush=True,
+                )
 
-                    tracker.record(
-                        agent=agent_name,
-                        input_tokens=input_tokens,
-                        output_tokens=output_tokens,
-                        total_tokens=total_tokens,
+                for chunk in stream:
+
+                    # The final streaming chunk can contain usage.
+                    usage = getattr(chunk, "usage", None)
+
+                    if usage is not None:
+                        final_usage = usage
+
+                    choices = getattr(chunk, "choices", None)
+
+                    if not choices:
+                        continue
+
+                    delta = getattr(
+                        choices[0],
+                        "delta",
+                        None,
                     )
 
-                text = response.choices[0].message.content or ""
+                    if delta is None:
+                        continue
+
+                    content = getattr(
+                        delta,
+                        "content",
+                        None,
+                    )
+
+                    if content:
+                        pieces.append(content)
+
+                        # Stream generated text immediately.
+                        sys.stdout.write(content)
+                        sys.stdout.flush()
+
+                print("\n", flush=True)
+
+                input_tokens = 0
+                output_tokens = 0
+                total_tokens = 0
+
+                if final_usage is not None:
+                    input_tokens = (
+                        getattr(
+                            final_usage,
+                            "prompt_tokens",
+                            0,
+                        )
+                        or 0
+                    )
+
+                    output_tokens = (
+                        getattr(
+                            final_usage,
+                            "completion_tokens",
+                            0,
+                        )
+                        or 0
+                    )
+
+                    total_tokens = (
+                        getattr(
+                            final_usage,
+                            "total_tokens",
+                            0,
+                        )
+                        or 0
+                    )
+
+                tracker.record(
+                    agent=agent_name,
+                    model=candidate,
+                    input_tokens=input_tokens,
+                    output_tokens=output_tokens,
+                    total_tokens=total_tokens,
+                )
 
                 if candidate != requested:
                     print(
-                        f"[LLM] Model '{requested}' unavailable; using fallback '{candidate}'.",
+                        f"[LLM] Model '{requested}' unavailable; "
+                        f"using fallback '{candidate}'.",
                         flush=True,
                     )
 
-                return text
+                return "".join(pieces)
 
             except Exception as exc:
+
                 last_error = exc
 
-                if _is_model_not_found(exc) and candidate_index < len(candidates) - 1:
+                if (
+                    _is_model_not_found(exc)
+                    and candidate_index < len(candidates) - 1
+                ):
                     break
 
-                if not _is_retryable(exc) or attempt >= MAX_RETRIES:
+                if (
+                    not _is_retryable(exc)
+                    or attempt >= MAX_RETRIES
+                ):
                     raise
 
                 delay = RETRY_BASE_SECONDS * (2**attempt)
 
                 print(
-                    f"[LLM] Request failed ({type(exc).__name__}); retrying in {delay:g}s...",
+                    f"[LLM] Request failed "
+                    f"({type(exc).__name__}); "
+                    f"retrying in {delay:g}s...",
                     flush=True,
                 )
 
                 time.sleep(delay)
 
     assert last_error is not None
+
     raise last_error

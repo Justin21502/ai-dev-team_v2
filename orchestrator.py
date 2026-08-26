@@ -296,8 +296,60 @@ def run_team(task: str, workspace_dir: str = "workspace") -> dict:
         "calls": final_totals.calls,
     }
 
+    # Save this run to persistent history.
+    run_number = tracker.save_history(
+        str(workspace / "run_history.json")
+    )
+
+    run_log["run_number"] = run_number
+
+    final_usage = tracker.get_all()
+    final_totals = tracker.totals()
+    final_models = tracker.get_models()
+
+    run_log["token_usage"] = {
+        agent: {
+            "model": final_models.get(agent),
+            "input_tokens": data.input_tokens,
+            "output_tokens": data.output_tokens,
+            "total_tokens": data.total_tokens,
+            "calls": data.calls,
+            "estimated_cost_usd": round(data.estimated_cost, 8),
+        }
+        for agent, data in final_usage.items()
+    }
+
+    run_log["token_totals"] = {
+        "input_tokens": final_totals.input_tokens,
+        "output_tokens": final_totals.output_tokens,
+        "total_tokens": final_totals.total_tokens,
+        "calls": final_totals.calls,
+        "estimated_cost_usd": round(final_totals.estimated_cost, 8),
+    }
+
     show_usage()
-    (workspace / "run_log.json").write_text(json.dumps(run_log, indent=2))
+
+    print("══════════════════════════════════════════════════════════")
+    print(f"                 RUN #{run_number} COMPLETE")
+    print("══════════════════════════════════════════════════════════")
+    print(
+        f"Total tokens: {final_totals.total_tokens:,}"
+    )
+    print(
+        f"Estimated API cost: ${final_totals.estimated_cost:.6f}"
+    )
+    print(
+        f"API calls: {final_totals.calls}"
+    )
+    print(
+        f"History: {workspace / 'run_history.json'}"
+    )
+    print("══════════════════════════════════════════════════════════")
+    print()
+
+    (workspace / "run_log.json").write_text(
+        json.dumps(run_log, indent=2)
+    )
     return run_log
 
 
