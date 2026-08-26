@@ -1,1 +1,1 @@
-# This file intentionally left blank to make `tests` a package.
+# This file makes `tests` a package.

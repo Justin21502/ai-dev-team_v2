@@ -1,6 +1,5 @@
-# Hello World Project
+# Hello World Demo Project
 
-A minimal Python package that prints **Hello, World!** and includes a pytest test suite.
+A minimal Python project that demonstrates a simple library function, a command‑line entry point, and a pytest test suite.
 
-## Installation
-
+## Project layout

@@ -1,28 +1,8 @@
-import pytest
-from hello import hello
+"""Tests for the hello module."""
+
+from src.hello import greet
 
 
-def test_hello_output(capsys):
-    """Ensure that `hello()` prints the expected message."""
-    hello()
-    captured = capsys.readouterr()
-    assert captured.out == "Hello, World!\n"
-
-
-@pytest.mark.parametrize(
-    "expected",
-    ["Hello, World!"],
-)
-def test_hello_message(expected, capsys):
-    """Parametrized version demonstrating pytest features."""
-    hello()
-    out, _ = capsys.readouterr()
-    assert out.strip() == expected
-
-
-def test_hello_no_error():
-    """Calling `hello()` should not raise any exception."""
-    try:
-        hello()
-    except Exception as exc:
-        pytest.fail(f"hello() raised an unexpected exception: {exc}")
+def test_greet():
+    """The greet function should return 'Hello World'."""
+    assert greet() == "Hello World"

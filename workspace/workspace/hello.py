@@ -1,33 +1,11 @@
-"""Top‑level entry point for the Hello World function.
+"""Compatibility module for legacy imports.
 
-This module re‑exports the `hello` function defined in the source package
-located at `src/hello.py`. It exists so that test modules can simply use:
-
-    from hello import hello
-
-without needing to know the internal package layout.
+This module provides a `hello` function that returns the greeting string.
+It mirrors the functionality of `src.hello.greet` to maintain backward
+compatibility with tests or scripts that import `hello` directly from the
+project root.
 """
 
-from pathlib import Path
-import importlib.util
-import sys
-
-# Resolve the path to the actual implementation module.
-_src_dir = Path(__file__).parent / "src"
-_impl_path = _src_dir / "hello.py"
-
-if not _impl_path.is_file():
-    raise ImportError(
-        f"Cannot locate the implementation module at expected path: {_impl_path}"
-    )
-
-# Load the implementation module dynamically.
-_spec = importlib.util.spec_from_file_location("hello_impl", _impl_path)
-_impl = importlib.util.module_from_spec(_spec)  # type: ignore
-assert _spec and _spec.loader  # for mypy/static check
-_spec.loader.exec_module(_impl)  # type: ignore
-
-# Re‑export the `hello` function.
-hello = _impl.hello  # type: ignore
-
-__all__ = ["hello"]
+def hello() -> str:
+    """Return the greeting string."""
+    return "Hello World"

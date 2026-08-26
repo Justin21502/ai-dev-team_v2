@@ -1,11 +1,10 @@
-"""Hello World module.
+"""Simple hello world module."""
 
-Provides a single function `hello()` that prints a greeting to standard output.
-"""
+def greet() -> str:
+    """Return the greeting string."""
+    return "Hello World"
 
-__all__ = ["hello"]
 
-
-def hello() -> None:
-    """Print 'Hello, World!' to stdout."""
-    print("Hello, World!")
+if __name__ == "__main__":
+    # When executed directly, print the greeting.
+    print(greet())
