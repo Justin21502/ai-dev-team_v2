@@ -1,10 +1,8 @@
 """Robust Groq/OpenAI-compatible client for the AI Dev Team.
 
 The project uses Groq because it offers a generous free tier and an
-OpenAI-compatible API. The client intentionally keeps model selection in one
+OpenAI-compatible API.  The client intentionally keeps model selection in one
 place and can fall back when a configured model is unavailable.
-
-Token usage from successful API calls is recorded by usage_tracker.py.
 """
 
 from __future__ import annotations
@@ -12,10 +10,9 @@ from __future__ import annotations
 import os
 import time
 from pathlib import Path
+from typing import Iterable
 
 from openai import OpenAI
-
-from usage_tracker import tracker
 
 GROQ_BASE_URL = "https://api.groq.com/openai/v1"
 PRIMARY_MODEL = os.environ.get("AI_TEAM_PRIMARY_MODEL", "openai/gpt-oss-120b")
@@ -93,31 +90,19 @@ def _request(client: OpenAI, messages, model: str, temperature: float):
         "messages": messages,
         "temperature": temperature,
     }
-
     # GPT-OSS supports reasoning_effort; don't force it on arbitrary custom
     # models. The env flag is opt-in so custom model compatibility is preserved.
     if os.environ.get("AI_TEAM_REASONING_EFFORT"):
         kwargs["reasoning_effort"] = os.environ["AI_TEAM_REASONING_EFFORT"]
-
     if os.environ.get("AI_TEAM_MAX_OUTPUT_TOKENS"):
         kwargs["max_completion_tokens"] = int(os.environ["AI_TEAM_MAX_OUTPUT_TOKENS"])
-
     return client.chat.completions.create(**kwargs)
 
 
-def chat(
-    messages,
-    model: str | None = None,
-    temperature: float = 0.3,
-    agent_name: str = "Unknown",
-) -> str:
-    """Send a chat completion with retries and automatic model fallback.
-
-    Successful API responses are recorded in the global token tracker.
-    """
+def chat(messages, model: str | None = None, temperature: float = 0.3) -> str:
+    """Send a chat completion with retries and an automatic model fallback."""
     client = get_client()
     requested = model or DEFAULT_MODEL
-
     candidates: list[str] = [requested]
     if FALLBACK_MODEL and FALLBACK_MODEL not in candidates:
         candidates.append(FALLBACK_MODEL)
@@ -128,48 +113,24 @@ def chat(
         for attempt in range(MAX_RETRIES + 1):
             try:
                 response = _request(client, messages, candidate, temperature)
-
-                # Record actual usage returned by the API.
-                usage = getattr(response, "usage", None)
-
-                if usage is not None:
-                    input_tokens = getattr(usage, "prompt_tokens", 0) or 0
-                    output_tokens = getattr(usage, "completion_tokens", 0) or 0
-                    total_tokens = getattr(usage, "total_tokens", 0) or 0
-
-                    tracker.record(
-                        agent=agent_name,
-                        input_tokens=input_tokens,
-                        output_tokens=output_tokens,
-                        total_tokens=total_tokens,
-                    )
-
                 text = response.choices[0].message.content or ""
-
                 if candidate != requested:
                     print(
                         f"[LLM] Model '{requested}' unavailable; using fallback '{candidate}'.",
                         flush=True,
                     )
-
                 return text
-
             except Exception as exc:
                 last_error = exc
-
                 if _is_model_not_found(exc) and candidate_index < len(candidates) - 1:
                     break
-
                 if not _is_retryable(exc) or attempt >= MAX_RETRIES:
                     raise
-
                 delay = RETRY_BASE_SECONDS * (2**attempt)
-
                 print(
                     f"[LLM] Request failed ({type(exc).__name__}); retrying in {delay:g}s...",
                     flush=True,
                 )
-
                 time.sleep(delay)
 
     assert last_error is not None

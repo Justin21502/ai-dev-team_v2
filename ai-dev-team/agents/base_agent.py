@@ -17,12 +17,6 @@ class Agent:
             messages.append({"role": "system", "content": extra_context})
         messages.append({"role": "user", "content": message})
 
-        response = chat(
-            messages,
-            model=self.model,
-            temperature=self.temperature,
-            agent_name=self.name,
-        )
-
+        response = chat(messages, model=self.model, temperature=self.temperature)
         self.history.append({"input": message, "output": response})
         return response

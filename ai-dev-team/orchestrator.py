@@ -28,7 +28,6 @@ from agents import (
 )
 from file_utils import extract_files, read_files_as_text, write_files
 from llm_client import FAST_MODEL, PRIMARY_MODEL
-from usage_tracker import tracker
 from web_search import search_many
 
 MAX_REVIEW_ITERATIONS = int(os.environ.get("MAX_REVIEW_ITERATIONS", "2"))
@@ -51,60 +50,6 @@ def log(msg: str):
     print(f"[{datetime.now(timezone.utc).strftime('%H:%M:%S')}] {msg}", flush=True)
 
 
-def show_usage(current_agent: str | None = None):
-    """Display current token usage for every agent."""
-    usage = tracker.get_all()
-    totals = tracker.totals()
-
-    agents = [
-        "Researcher",
-        "Architect",
-        "Developer",
-        "Reviewer",
-        "Security",
-        "Tester",
-        "Debugger",
-    ]
-
-    print()
-    print("╔══════════════════════════════════════════════════════════╗")
-    print("║              AI DEV TEAM — TOKEN USAGE                 ║")
-    print("╠══════════════╦════════════╦════════════╦═══════════════╣")
-    print("║ Agent        ║ Input      ║ Output     ║ Total         ║")
-    print("╠══════════════╬════════════╬════════════╬═══════════════╣")
-
-    for agent in agents:
-        data = usage.get(agent)
-
-        if data:
-            marker = " ◀" if agent == current_agent else ""
-            print(
-                f"║ {agent:<12} ║ "
-                f"{data.input_tokens:>10,} ║ "
-                f"{data.output_tokens:>10,} ║ "
-                f"{data.total_tokens:>13,} ║{marker}"
-            )
-        else:
-            marker = " ◀" if agent == current_agent else ""
-            print(
-                f"║ {agent:<12} ║ "
-                f"{0:>10,} ║ "
-                f"{0:>10,} ║ "
-                f"{0:>13,} ║{marker}"
-            )
-
-    print("╠══════════════╬════════════╬════════════╬═══════════════╣")
-    print(
-        f"║ {'TOTAL':<12} ║ "
-        f"{totals.input_tokens:>10,} ║ "
-        f"{totals.output_tokens:>10,} ║ "
-        f"{totals.total_tokens:>13,} ║"
-    )
-    print("╚══════════════╩════════════╩════════════╩═══════════════╝")
-    print(f"API calls: {totals.calls}")
-    print()
-
-
 def _safe_context(paths: list[str], workspace_dir: str) -> str:
     """Read generated files, returning a useful message when none exist."""
     if not paths:
@@ -121,9 +66,6 @@ def _apply_agent_files(output: str, workspace_dir: str, existing: list[str]) -> 
 
 
 def run_team(task: str, workspace_dir: str = "workspace") -> dict:
-    # Each team invocation gets its own token accounting.
-    tracker.reset()
-
     workspace = Path(workspace_dir)
     workspace.mkdir(parents=True, exist_ok=True)
     run_log = {
@@ -158,7 +100,6 @@ def run_team(task: str, workspace_dir: str = "workspace") -> dict:
             "Summarize only useful, supported information for the Architect and Developer."
         )
         run_log["steps"].append({"agent": "Researcher", "output": research_notes})
-        show_usage("Researcher")
         log("Research notes ready.")
 
     # 1. Architect.
@@ -169,7 +110,6 @@ def run_team(task: str, workspace_dir: str = "workspace") -> dict:
         + "Produce a short implementation plan."
     )
     run_log["steps"].append({"agent": "Architect", "output": plan})
-    show_usage("Architect")
     log("Plan ready.")
 
     # 2. Developer first pass.
@@ -180,7 +120,6 @@ def run_team(task: str, workspace_dir: str = "workspace") -> dict:
     )
     written_paths = _apply_agent_files(dev_output, workspace_dir, [])
     run_log["steps"].append({"agent": "Developer", "output": dev_output, "files": written_paths})
-    show_usage("Developer")
     if not written_paths:
         raise RuntimeError("Developer response contained no parseable FILE blocks; cannot continue safely.")
 
@@ -189,7 +128,6 @@ def run_team(task: str, workspace_dir: str = "workspace") -> dict:
         log(f"Reviewer round {i}...")
         review = reviewer.say(f"Task:\n{task}\n\nReview this code:\n\n{_safe_context(written_paths, workspace_dir)}")
         run_log["steps"].append({"agent": "Reviewer", "round": i, "output": review})
-        show_usage("Reviewer")
         if review.strip().upper().startswith("APPROVED"):
             log("Reviewer approved the code.")
             break
@@ -202,7 +140,6 @@ def run_team(task: str, workspace_dir: str = "workspace") -> dict:
         )
         written_paths = _apply_agent_files(dev_output, workspace_dir, written_paths)
         run_log["steps"].append({"agent": "Developer", "round": i, "output": dev_output, "files": written_paths})
-        show_usage("Developer")
 
     # 4. Security review loop.
     for i in range(1, MAX_SECURITY_ITERATIONS + 1):
@@ -211,7 +148,6 @@ def run_team(task: str, workspace_dir: str = "workspace") -> dict:
             f"Task:\n{task}\n\nReview this code for security issues:\n\n{_safe_context(written_paths, workspace_dir)}"
         )
         run_log["steps"].append({"agent": "Security", "round": i, "output": sec_review})
-        show_usage("Security")
         if sec_review.strip().upper().startswith("APPROVED"):
             log("Security review approved the code.")
             break
@@ -224,7 +160,6 @@ def run_team(task: str, workspace_dir: str = "workspace") -> dict:
         )
         written_paths = _apply_agent_files(dev_output, workspace_dir, written_paths)
         run_log["steps"].append({"agent": "Developer", "round": i, "output": dev_output, "files": written_paths})
-        show_usage("Developer")
 
     # 5. Tester writes tests.
     log("Tester is writing tests...")
@@ -233,7 +168,6 @@ def run_team(task: str, workspace_dir: str = "workspace") -> dict:
     )
     test_paths = write_files(extract_files(test_output), workspace_dir)
     run_log["steps"].append({"agent": "Tester", "output": test_output, "files": test_paths})
-    show_usage("Tester")
 
     # 6. Run tests for real and repair failures.
     final_test_result = None
@@ -270,33 +204,10 @@ def run_team(task: str, workspace_dir: str = "workspace") -> dict:
         )
         written_paths = _apply_agent_files(fix_output, workspace_dir, written_paths)
         run_log["steps"].append({"agent": fixer_name, "round": i, "output": fix_output, "files": written_paths})
-        show_usage(fixer_name)
     else:
         log("Max test iterations reached; tests still failing.")
 
     run_log["status"] = "passed" if final_test_result and final_test_result.returncode == 0 else "tests_failed"
-
-    # Save final token usage into the run log.
-    final_usage = tracker.get_all()
-    final_totals = tracker.totals()
-
-    run_log["token_usage"] = {
-        agent: {
-            "input_tokens": data.input_tokens,
-            "output_tokens": data.output_tokens,
-            "total_tokens": data.total_tokens,
-            "calls": data.calls,
-        }
-        for agent, data in final_usage.items()
-    }
-    run_log["token_totals"] = {
-        "input_tokens": final_totals.input_tokens,
-        "output_tokens": final_totals.output_tokens,
-        "total_tokens": final_totals.total_tokens,
-        "calls": final_totals.calls,
-    }
-
-    show_usage()
     (workspace / "run_log.json").write_text(json.dumps(run_log, indent=2))
     return run_log
 

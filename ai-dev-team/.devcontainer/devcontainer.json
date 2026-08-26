@@ -1,0 +1,15 @@
+{
+  "name": "ai-dev-team",
+  "image": "mcr.microsoft.com/devcontainers/python:3.12",
+  "postCreateCommand": "pip install -r requirements.txt",
+  "customizations": {
+    "vscode": {
+      "extensions": ["ms-python.python"]
+    }
+  }
+  // This project uses Groq (free) for the LLM calls, not a GitHub-provided
+  // token, so there's nothing Codespaces needs to inject automatically.
+  // Set GROQ_API_KEY as a Codespaces secret (repo/org Settings -> Secrets
+  // and variables -> Codespaces) so it's available every time you open this
+  // Codespace -- see README.md for the full walkthrough.
+}
