@@ -493,3 +493,114 @@ def build_context(
 
     return result[:max_chars]
 
+
+def build_context_report(
+    paths: list[str],
+    workspace_dir: str,
+    role: str,
+    *,
+    max_chars: int | None = None,
+    focus_paths: list[str] | None = None,
+) -> tuple[str, dict]:
+    """
+    Build normal agent context plus observability metadata.
+
+    This intentionally delegates context generation to build_context() so
+    observability cannot change file selection or budgeting behavior.
+    """
+    if max_chars is None:
+        max_chars = DEFAULT_MAX_CHARS
+
+    selected = select_context_files(
+        paths,
+        workspace_dir,
+        role,
+        focus_paths=focus_paths,
+    )
+
+    context = build_context(
+        paths,
+        workspace_dir,
+        role,
+        max_chars=max_chars,
+        focus_paths=focus_paths,
+    )
+
+    selected_files = [
+        relative.as_posix()
+        for _, relative, _ in selected
+    ]
+
+    visible_files = []
+
+    for line in context.splitlines():
+        prefix = "### FILE: "
+
+        if not line.startswith(prefix):
+            continue
+
+        value = line[len(prefix):].strip()
+
+        if value and value not in visible_files:
+            visible_files.append(value)
+
+    normalized_focus = []
+
+    workspace = Path(workspace_dir).resolve()
+
+    for value in focus_paths or []:
+        candidate = Path(value)
+
+        if not candidate.is_absolute():
+            candidate = workspace / candidate
+
+        try:
+            relative = (
+                candidate.resolve()
+                .relative_to(workspace)
+                .as_posix()
+            )
+        except (OSError, ValueError):
+            continue
+
+        if relative not in normalized_focus:
+            normalized_focus.append(relative)
+
+    focused_visible = [
+        value
+        for value in normalized_focus
+        if value in visible_files
+    ]
+
+    omitted_files = [
+        value
+        for value in selected_files
+        if value not in visible_files
+    ]
+
+    report = {
+        "role": role.lower(),
+        "budget_max": max_chars,
+        "budget_used": len(context),
+        "budget_percent": (
+            round(
+                (len(context) / max_chars) * 100,
+                1,
+            )
+            if max_chars > 0
+            else 0.0
+        ),
+        "selected_count": len(selected_files),
+        "visible_count": len(visible_files),
+        "omitted_count": len(omitted_files),
+        "focus_count": len(normalized_focus),
+        "focused_visible_count": len(focused_visible),
+        "selected_files": selected_files,
+        "visible_files": visible_files,
+        "focused_files": normalized_focus,
+        "focused_visible_files": focused_visible,
+        "omitted_files": omitted_files,
+    }
+
+    return context, report
+

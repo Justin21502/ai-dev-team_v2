@@ -27,7 +27,10 @@ from agents import (
     make_tester,
 )
 from file_utils import extract_files, write_files
-from context_manager import build_context, discover_project_files
+from context_manager import (
+    build_context_report,
+    discover_project_files,
+)
 from llm_client import FAST_MODEL, PRIMARY_MODEL
 from usage_tracker import tracker
 from team_dashboard import dashboard
@@ -501,6 +504,8 @@ def _safe_context(
     role: str = "developer",
     *,
     focus_paths: list[str] | None = None,
+    report_sink: list[dict] | None = None,
+    purpose: str | None = None,
 ) -> str:
     """
     Build bounded, role-aware context from the actual current repository.
@@ -520,12 +525,41 @@ def _safe_context(
         )
     )
 
-    return build_context(
+    context, report = build_context_report(
         context_paths,
         workspace_dir,
         role,
         focus_paths=focus_paths,
     )
+
+    if report_sink is not None:
+        stored_report = dict(report)
+        stored_report["sequence"] = len(report_sink) + 1
+        stored_report["purpose"] = (
+            purpose or role.lower()
+        )
+        report_sink.append(stored_report)
+
+    events.emit(
+        "TEAM_TELEMETRY",
+        context_role=report["role"],
+        context_budget_used=report["budget_used"],
+        context_budget_max=report["budget_max"],
+        context_budget_percent=report["budget_percent"],
+        context_selected=report["selected_count"],
+        context_visible=report["visible_count"],
+        context_omitted=report["omitted_count"],
+        context_focus=report["focus_count"],
+        context_focused_visible=report[
+            "focused_visible_count"
+        ],
+        context_files=report["visible_files"],
+        context_focus_files=report[
+            "focused_visible_files"
+        ],
+    )
+
+    return context
 
 
 def _apply_agent_files(
@@ -663,6 +697,7 @@ def run_team(task: str, workspace_dir: str = "workspace"):
             "debugger": MODEL_DEBUGGER,
         },
         "steps": [],
+        "context_reports": [],
     }
 
     researcher = make_researcher(MODEL_RESEARCHER)
@@ -751,7 +786,7 @@ IMPORTANT FILE RULES:
         log(f"Reviewer round {i}...")
         review = reviewer.say(
             f"Task:\n{task}\n\nReview this code:\n\n"
-            f"{_safe_context(written_paths, workspace_dir, role='reviewer')}"
+            f"{_safe_context(written_paths, workspace_dir, role='reviewer', report_sink=run_log["context_reports"], purpose="review")}"
         )
         review_decision = _parse_agent_decision(review)
 
@@ -782,7 +817,7 @@ IMPORTANT FILE RULES:
         dev_output = developer.say(
             f"Task:\n{task}\n\n"
             f"Current code:\n"
-            f"{_safe_context(written_paths, workspace_dir, role='developer', focus_paths=review_focus)}\n\n"
+            f"{_safe_context(written_paths, workspace_dir, role='developer', focus_paths=review_focus, report_sink=run_log["context_reports"], purpose="review_repair")}\n\n"
             f"Files implicated by Reviewer:\n"
             f"{', '.join(review_focus) if review_focus else '(none detected)'}\n\n"
             f"Reviewer feedback:\n{review_feedback}\n\n"
@@ -820,7 +855,7 @@ IMPORTANT FILE RULES:
         log(f"Security review round {i}...")
         sec_review = security.say(
             f"Task:\n{task}\n\nReview this code for security issues:\n\n"
-            f"{_safe_context(written_paths, workspace_dir, role='security')}"
+            f"{_safe_context(written_paths, workspace_dir, role='security', report_sink=run_log["context_reports"], purpose="security_review")}"
         )
         security_decision = _parse_agent_decision(sec_review)
 
@@ -851,7 +886,7 @@ IMPORTANT FILE RULES:
         dev_output = developer.say(
             f"Task:\n{task}\n\n"
             f"Current code:\n"
-            f"{_safe_context(written_paths, workspace_dir, role='developer', focus_paths=security_focus)}\n\n"
+            f"{_safe_context(written_paths, workspace_dir, role='developer', focus_paths=security_focus, report_sink=run_log["context_reports"], purpose="security_repair")}\n\n"
             f"Files implicated by Security:\n"
             f"{', '.join(security_focus) if security_focus else '(none detected)'}\n\n"
             f"Security feedback:\n{security_feedback}\n\n"
@@ -882,7 +917,7 @@ IMPORTANT FILE RULES:
 
 Code to test:
 
-{_safe_context(written_paths, workspace_dir, role='tester')}
+{_safe_context(written_paths, workspace_dir, role='tester', report_sink=run_log["context_reports"], purpose="test_generation")}
 
 IMPORTANT TESTING RULES:
 - The current workspace directory is the project root.
@@ -972,7 +1007,7 @@ IMPORTANT TESTING RULES:
 
         fix_output = fixer.say(
             f"Task:\n{task}\n\nCurrent application code:\n"
-            f"{_safe_context(written_paths, workspace_dir, role=fixer_name.lower(), focus_paths=failure_focus)}\n\n"
+            f"{_safe_context(written_paths, workspace_dir, role=fixer_name.lower(), focus_paths=failure_focus, report_sink=run_log["context_reports"], purpose="pytest_repair")}\n\n"
             f"Files implicated by pytest:\n"
             f"{', '.join(failure_focus) if failure_focus else '(none detected)'}\n\n"
             f"pytest output:\n{result.stdout}\n{result.stderr}\n\n"
@@ -1043,6 +1078,32 @@ IMPORTANT TESTING RULES:
         workspace_dir
     )
 
+    # Summarize context usage for lightweight run history.
+    context_reports = run_log.get(
+        "context_reports",
+        [],
+    )
+
+    context_calls = len(context_reports)
+
+    context_peak_percent = max(
+        (
+            float(report.get("budget_percent", 0.0))
+            for report in context_reports
+        ),
+        default=0.0,
+    )
+
+    context_total_visible = sum(
+        int(report.get("visible_count", 0))
+        for report in context_reports
+    )
+
+    context_total_omitted = sum(
+        int(report.get("omitted_count", 0))
+        for report in context_reports
+    )
+
     # Save this run to persistent history.
     run_number = tracker.save_history(
         str(workspace / "run_history.json"),
@@ -1055,6 +1116,13 @@ IMPORTANT TESTING RULES:
             "review_rounds": review_rounds,
             "security_rounds": security_rounds,
             "test_attempts": test_attempts,
+            "context_calls": context_calls,
+            "context_peak_percent": round(
+                context_peak_percent,
+                1,
+            ),
+            "context_visible_files": context_total_visible,
+            "context_omitted_files": context_total_omitted,
         },
     )
 
@@ -1065,6 +1133,15 @@ IMPORTANT TESTING RULES:
     run_log["review_rounds"] = review_rounds
     run_log["security_rounds"] = security_rounds
     run_log["test_attempts"] = test_attempts
+    run_log["context_summary"] = {
+        "calls": context_calls,
+        "peak_budget_percent": round(
+            context_peak_percent,
+            1,
+        ),
+        "total_visible_files": context_total_visible,
+        "total_omitted_files": context_total_omitted,
+    }
 
     final_usage = tracker.get_all()
     final_totals = tracker.totals()
