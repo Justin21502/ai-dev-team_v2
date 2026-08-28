@@ -191,68 +191,7 @@ def _pytest_summary(step: dict, run: dict) -> str:
     return "pytest completed"
 
 
-def _decision_result(
-    step: dict,
-    *,
-    approved_text: str,
-    changes_text: str,
-) -> str | None:
-    """Render a structured Reviewer/Security decision when available."""
-    decision = step.get("decision")
-
-    if not isinstance(decision, dict):
-        return None
-
-    verdict = str(
-        decision.get("verdict") or ""
-    ).strip().upper()
-
-    summary = str(
-        decision.get("summary") or ""
-    ).strip()
-
-    issues = decision.get("issues")
-
-    if not isinstance(issues, list):
-        issues = []
-
-    if verdict == "APPROVED":
-        if summary:
-            return f"{approved_text} — {summary}"
-
-        return approved_text
-
-    if verdict in {
-        "CHANGES_REQUESTED",
-        "CHANGES_NEEDED",
-    }:
-        issue_count = len(issues)
-
-        if issue_count:
-            noun = "issue" if issue_count == 1 else "issues"
-            base = f"{changes_text} — {issue_count} {noun}"
-        else:
-            base = changes_text
-
-        if summary:
-            return f"{base}: {summary}"
-
-        return base
-
-    return None
-
-
-def _review_result(step: dict) -> str:
-    structured = _decision_result(
-        step,
-        approved_text="Approved",
-        changes_text="Changes requested",
-    )
-
-    if structured:
-        return structured
-
-    output = step.get("output")
+def _review_result(output: str | None) -> str:
     first = _first_line(output)
 
     if not first:
@@ -264,17 +203,7 @@ def _review_result(step: dict) -> str:
     return "Changes requested"
 
 
-def _security_result(step: dict) -> str:
-    structured = _decision_result(
-        step,
-        approved_text="Approved",
-        changes_text="Issues found",
-    )
-
-    if structured:
-        return structured
-
-    output = step.get("output")
+def _security_result(output: str | None) -> str:
     first = _first_line(output)
 
     if not first:
@@ -340,7 +269,7 @@ def _step_description(
 
             return title, "Review completed"
 
-        return title, _review_result(step)
+        return title, _review_result(output)
 
     if agent == "Security":
         title = "Security"
@@ -348,7 +277,7 @@ def _step_description(
         if round_number is not None:
             title += f" — Round {round_number}"
 
-        return title, _security_result(step)
+        return title, _security_result(step.get("output"))
 
     if agent in {"Developer", "Debugger"}:
         title = agent

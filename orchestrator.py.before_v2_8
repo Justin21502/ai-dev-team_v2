@@ -146,155 +146,6 @@ def _summarize_pytest(result) -> str:
 
     return f"pytest exited with code {result.returncode}"
 
-def _parse_agent_decision(raw: str) -> dict:
-    """
-    Normalize Reviewer/Security responses into a stable decision object.
-
-    Structured JSON is preferred. Legacy APPROVED / CHANGES_NEEDED text
-    remains supported so older models or malformed responses do not break
-    orchestration.
-    """
-    text = (raw or "").strip()
-
-    decision = {
-        "verdict": "CHANGES_REQUESTED",
-        "summary": "",
-        "issues": [],
-        "structured": False,
-    }
-
-    if text:
-        candidate = text
-
-        # Tolerate accidental markdown fences even though prompts forbid them.
-        if candidate.startswith("```"):
-            lines = candidate.splitlines()
-
-            if lines and lines[0].startswith("```"):
-                lines = lines[1:]
-
-            if lines and lines[-1].strip() == "```":
-                lines = lines[:-1]
-
-            candidate = "\n".join(lines).strip()
-
-        try:
-            parsed = json.loads(candidate)
-        except (json.JSONDecodeError, TypeError):
-            parsed = None
-
-        if isinstance(parsed, dict):
-            verdict = str(parsed.get("verdict") or "").strip().upper()
-
-            if verdict in {
-                "APPROVED",
-                "CHANGES_REQUESTED",
-                "CHANGES_NEEDED",
-            }:
-                if verdict == "CHANGES_NEEDED":
-                    verdict = "CHANGES_REQUESTED"
-
-                issues = parsed.get("issues")
-                if not isinstance(issues, list):
-                    issues = []
-
-                normalized_issues = []
-
-                for issue in issues:
-                    if not isinstance(issue, dict):
-                        continue
-
-                    normalized_issues.append({
-                        "severity": str(
-                            issue.get("severity") or "medium"
-                        ).strip().lower(),
-                        "file": str(
-                            issue.get("file") or "unknown"
-                        ).strip(),
-                        "reason": str(
-                            issue.get("reason") or ""
-                        ).strip(),
-                        "requested_change": str(
-                            issue.get("requested_change") or ""
-                        ).strip(),
-                    })
-
-                if verdict == "APPROVED":
-                    normalized_issues = []
-
-                return {
-                    "verdict": verdict,
-                    "summary": str(
-                        parsed.get("summary") or ""
-                    ).strip(),
-                    "issues": normalized_issues,
-                    "structured": True,
-                }
-
-    # Legacy/failure fallback.
-    upper = text.upper()
-
-    if upper.startswith("APPROVED"):
-        decision["verdict"] = "APPROVED"
-        decision["summary"] = (
-            text.splitlines()[0] if text else "Approved"
-        )
-        return decision
-
-    if upper.startswith(("CHANGES_NEEDED", "CHANGES_REQUESTED")):
-        decision["summary"] = (
-            text.splitlines()[0] if text else "Changes requested"
-        )
-        return decision
-
-    # Fail closed: an unparseable review must not silently approve code.
-    decision["summary"] = (
-        "Response could not be parsed as a structured decision."
-    )
-    return decision
-
-
-def _decision_feedback(decision: dict, raw: str) -> str:
-    """Create concise Developer-facing feedback from a normalized decision."""
-    issues = decision.get("issues") or []
-
-    if issues:
-        lines = []
-
-        summary = str(decision.get("summary") or "").strip()
-        if summary:
-            lines.append(summary)
-
-        for index, issue in enumerate(issues, start=1):
-            severity = str(
-                issue.get("severity") or "medium"
-            ).upper()
-            file_name = str(
-                issue.get("file") or "unknown"
-            )
-            reason = str(issue.get("reason") or "").strip()
-            change = str(
-                issue.get("requested_change") or ""
-            ).strip()
-
-            lines.append(
-                f"{index}. [{severity}] {file_name}: {reason}"
-            )
-
-            if change:
-                lines.append(f"   Required change: {change}")
-
-        return "\n".join(lines)
-
-    # Preserve useful legacy prose when structured issues are unavailable.
-    if raw and raw.strip():
-        return raw.strip()
-
-    return str(
-        decision.get("summary") or "Changes requested."
-    )
-
-
 def _project_file_counts(workspace_dir: str) -> tuple[int, int]:
     """
     Count final project files from disk.
@@ -577,38 +428,18 @@ IMPORTANT FILE RULES:
             review_max=MAX_REVIEW_ITERATIONS,
         )
         log(f"Reviewer round {i}...")
-        review = reviewer.say(
-            f"Task:\n{task}\n\nReview this code:\n\n"
-            f"{_safe_context(written_paths, workspace_dir)}"
-        )
-        review_decision = _parse_agent_decision(review)
-
-        run_log["steps"].append({
-            "agent": "Reviewer",
-            "round": i,
-            "output": review,
-            "decision": review_decision,
-        })
-
+        review = reviewer.say(f"Task:\n{task}\n\nReview this code:\n\n{_safe_context(written_paths, workspace_dir)}")
+        run_log["steps"].append({"agent": "Reviewer", "round": i, "output": review})
         show_usage("Reviewer")
-
-        if review_decision["verdict"] == "APPROVED":
+        if review.strip().upper().startswith("APPROVED"):
             log("Reviewer approved the code.")
             break
 
         log("Reviewer requested changes. Sending back to Developer...")
-
-        review_feedback = _decision_feedback(
-            review_decision,
-            review,
-        )
-
         dev_output = developer.say(
-            f"Task:\n{task}\n\n"
-            f"Current code:\n{_safe_context(written_paths, workspace_dir)}\n\n"
-            f"Reviewer feedback:\n{review_feedback}\n\n"
-            "Revise the code. Re-output the COMPLETE contents of every "
-            "file that needs a change."
+            f"Task:\n{task}\n\nCurrent code:\n{_safe_context(written_paths, workspace_dir)}\n\n"
+            f"Reviewer feedback:\n{review}\n\n"
+            "Revise the code. Re-output the COMPLETE contents of every file that needs a change."
         )
         changed_paths = []
         written_paths = _apply_agent_files(
@@ -640,37 +471,19 @@ IMPORTANT FILE RULES:
         )
         log(f"Security review round {i}...")
         sec_review = security.say(
-            f"Task:\n{task}\n\nReview this code for security issues:\n\n"
-            f"{_safe_context(written_paths, workspace_dir)}"
+            f"Task:\n{task}\n\nReview this code for security issues:\n\n{_safe_context(written_paths, workspace_dir)}"
         )
-        security_decision = _parse_agent_decision(sec_review)
-
-        run_log["steps"].append({
-            "agent": "Security",
-            "round": i,
-            "output": sec_review,
-            "decision": security_decision,
-        })
-
+        run_log["steps"].append({"agent": "Security", "round": i, "output": sec_review})
         show_usage("Security")
-
-        if security_decision["verdict"] == "APPROVED":
+        if sec_review.strip().upper().startswith("APPROVED"):
             log("Security review approved the code.")
             break
 
         log("Security review found issues. Sending back to Developer...")
-
-        security_feedback = _decision_feedback(
-            security_decision,
-            sec_review,
-        )
-
         dev_output = developer.say(
-            f"Task:\n{task}\n\n"
-            f"Current code:\n{_safe_context(written_paths, workspace_dir)}\n\n"
-            f"Security feedback:\n{security_feedback}\n\n"
-            "Fix the issues and re-output the COMPLETE contents of every "
-            "file that needs a change."
+            f"Task:\n{task}\n\nCurrent code:\n{_safe_context(written_paths, workspace_dir)}\n\n"
+            f"Security feedback:\n{sec_review}\n\n"
+            "Fix the issues and re-output the COMPLETE contents of every file that needs a change."
         )
         changed_paths = []
         written_paths = _apply_agent_files(
