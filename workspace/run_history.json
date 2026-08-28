@@ -130,7 +130,7 @@
     "estimated_cost": 0.008464274999999999,
     "task": "Build a simple Python command-line temperature converter that converts Celsius to Fahrenheit and Fahrenheit to Celsius. Include input validation and pytest tests.",
     "result": "passed",
-    "pytest_summary": ".................                                                        [100%]",
+    "pytest_summary": "17 passed",
     "source_files": 7,
     "test_files": 2,
     "review_rounds": 2,
