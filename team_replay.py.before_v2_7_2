@@ -83,20 +83,6 @@ def _is_test_path(value: str) -> bool:
     )
 
 
-def _changed_application_files(step: dict) -> list[str]:
-    """Return application files changed during this specific step."""
-    changed = step.get("files_changed")
-
-    if not isinstance(changed, list):
-        return []
-
-    return [
-        str(path)
-        for path in changed
-        if not _is_test_path(str(path))
-    ]
-
-
 def _application_file_count(step: dict) -> int:
     """Count application files while excluding test files."""
     files = step.get("files")
@@ -285,14 +271,6 @@ def _step_description(
         if round_number is not None:
             title += f" — Round {round_number}"
 
-        changed = _changed_application_files(step)
-
-        if changed:
-            count = len(changed)
-            noun = "file" if count == 1 else "files"
-            return title, f"{count} application {noun} changed"
-
-        # Legacy runs did not store files_changed.
         count = _application_file_count(step)
 
         if count:

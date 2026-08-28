@@ -160,7 +160,6 @@ def _project_file_counts(workspace_dir: str) -> tuple[int, int]:
         "__pycache__",
         ".pytest_cache",
         ".git",
-        ".team",
     }
 
     ignored_files = {
@@ -212,7 +211,6 @@ def _apply_agent_files(
     workspace_dir: str,
     existing: list[str],
     protected_paths: set[str] | None = None,
-    changes_out: list[str] | None = None,
 ) -> list[str]:
     """
     Apply files emitted by an agent while protecting selected files.
@@ -260,23 +258,6 @@ def _apply_agent_files(
         return existing
 
     written = write_files(safe_files, workspace_dir)
-
-    # Record only the files written by THIS agent action. Keep these
-    # workspace-relative so archived run logs remain portable.
-    if changes_out is not None:
-        for path in written:
-            try:
-                relative = (
-                    Path(path)
-                    .resolve()
-                    .relative_to(workspace)
-                    .as_posix()
-                )
-            except ValueError:
-                relative = str(path)
-
-            changes_out.append(relative)
-
     return list(dict.fromkeys(existing + written))
 
 
@@ -397,24 +378,13 @@ IMPORTANT FILE RULES:
 - Write the code now, following the FILE format exactly.
 """
     )
-    initial_changed_paths = []
-    written_paths = _apply_agent_files(
-        dev_output,
-        workspace_dir,
-        [],
-        changes_out=initial_changed_paths,
-    )
+    written_paths = _apply_agent_files(dev_output, workspace_dir, [])
     events.emit(
         "TEAM_TELEMETRY",
         phase="Development",
         source_files=len(written_paths),
     )
-    run_log["steps"].append({
-        "agent": "Developer",
-        "output": dev_output,
-        "files": written_paths,
-        "files_changed": initial_changed_paths,
-    })
+    run_log["steps"].append({"agent": "Developer", "output": dev_output, "files": written_paths})
     show_usage("Developer")
     if not written_paths:
         raise RuntimeError("Developer response contained no parseable FILE blocks; cannot continue safely.")
@@ -441,24 +411,12 @@ IMPORTANT FILE RULES:
             f"Reviewer feedback:\n{review}\n\n"
             "Revise the code. Re-output the COMPLETE contents of every file that needs a change."
         )
-        changed_paths = []
-        written_paths = _apply_agent_files(
-            dev_output,
-            workspace_dir,
-            written_paths,
-            changes_out=changed_paths,
-        )
+        written_paths = _apply_agent_files(dev_output, workspace_dir, written_paths)
         events.emit(
             "TEAM_TELEMETRY",
             source_files=len(written_paths),
         )
-        run_log["steps"].append({
-            "agent": "Developer",
-            "round": i,
-            "output": dev_output,
-            "files": written_paths,
-            "files_changed": changed_paths,
-        })
+        run_log["steps"].append({"agent": "Developer", "round": i, "output": dev_output, "files": written_paths})
         show_usage("Developer")
 
     # 4. Security review loop.
@@ -485,20 +443,8 @@ IMPORTANT FILE RULES:
             f"Security feedback:\n{sec_review}\n\n"
             "Fix the issues and re-output the COMPLETE contents of every file that needs a change."
         )
-        changed_paths = []
-        written_paths = _apply_agent_files(
-            dev_output,
-            workspace_dir,
-            written_paths,
-            changes_out=changed_paths,
-        )
-        run_log["steps"].append({
-            "agent": "Developer",
-            "round": i,
-            "output": dev_output,
-            "files": written_paths,
-            "files_changed": changed_paths,
-        })
+        written_paths = _apply_agent_files(dev_output, workspace_dir, written_paths)
+        run_log["steps"].append({"agent": "Developer", "round": i, "output": dev_output, "files": written_paths})
         show_usage("Developer")
 
     # 5. Tester writes tests.
@@ -597,20 +543,17 @@ IMPORTANT TESTING RULES:
             "Fix the application code (not the tests) so the tests pass. "
             "Re-output the COMPLETE contents of every application file you change."
         )
-        changed_paths = []
         written_paths = _apply_agent_files(
             fix_output,
             workspace_dir,
             written_paths,
             protected_test_paths,
-            changes_out=changed_paths,
         )
         run_log["steps"].append({
             "agent": fixer_name,
             "round": i,
             "output": fix_output,
             "files": written_paths,
-            "files_changed": changed_paths,
         })
         show_usage(fixer_name)
     else:
