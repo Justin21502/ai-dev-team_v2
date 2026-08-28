@@ -1,8 +1,8 @@
-"""Tests for the hello module."""
-
-from src.hello import greet
+from src.hello import hello
 
 
-def test_greet():
-    """The greet function should return 'Hello World'."""
-    assert greet() == "Hello World"
+def test_hello_output(capsys):
+    """Test that hello() prints exactly 'Hello World'."""
+    hello()
+    captured = capsys.readouterr()
+    assert captured.out.strip() == "Hello World"

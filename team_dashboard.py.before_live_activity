@@ -1,0 +1,214 @@
+"""Live terminal dashboard for the AI Dev Team."""
+
+from __future__ import annotations
+
+import os
+import time
+from threading import Lock
+
+from team_events import TeamEvent, events
+from usage_tracker import tracker
+
+
+AGENTS = [
+    "Researcher",
+    "Architect",
+    "Developer",
+    "Reviewer",
+    "Security",
+    "Tester",
+    "Debugger",
+]
+
+ICONS = {
+    "Researcher": "🔎",
+    "Architect": "🏗️",
+    "Developer": "💻",
+    "Reviewer": "🔍",
+    "Security": "🔐",
+    "Tester": "🧪",
+    "Debugger": "🐛",
+}
+
+
+class Dashboard:
+    def __init__(self):
+        self._lock = Lock()
+        self.running = False
+        self.current_agent = None
+        self.status = {agent: "WAITING" for agent in AGENTS}
+        self.messages = {agent: "" for agent in AGENTS}
+        self.start_time = None
+        self.run_number = None
+
+        events.subscribe(self.handle_event)
+
+    def start(self, run_number=None):
+        with self._lock:
+            self.running = True
+            self.start_time = time.time()
+            self.run_number = run_number
+
+        self.render()
+
+    def stop(self):
+        with self._lock:
+            self.running = False
+            self.current_agent = None
+
+        self.render()
+
+    def handle_event(self, event: TeamEvent):
+        with self._lock:
+            if event.agent in self.status:
+                if event.event_type == "AGENT_STARTED":
+                    self.status[event.agent] = "WORKING"
+                    self.current_agent = event.agent
+                    self.messages[event.agent] = event.message
+
+                elif event.event_type == "AGENT_COMPLETED":
+                    self.status[event.agent] = "DONE"
+                    self.messages[event.agent] = event.message
+
+                elif event.event_type == "AGENT_FAILED":
+                    self.status[event.agent] = "FAILED"
+                    self.messages[event.agent] = event.message
+
+            if event.event_type == "TEAM_STARTED":
+                self.running = True
+
+            elif event.event_type == "TEAM_COMPLETED":
+                self.running = False
+                self.current_agent = None
+
+        self.render()
+
+    def _format_time(self):
+        if self.start_time is None:
+            return "00:00:00"
+
+        elapsed = int(time.time() - self.start_time)
+
+        hours, remainder = divmod(elapsed, 3600)
+        minutes, seconds = divmod(remainder, 60)
+
+        return f"{hours:02}:{minutes:02}:{seconds:02}"
+
+    def _status_symbol(self, status):
+        return {
+            "WAITING": "○",
+            "WORKING": "●",
+            "DONE": "✓",
+            "FAILED": "✗",
+        }.get(status, "?")
+
+    def render(self):
+        if not self.running and self.start_time is None:
+            return
+
+        with self._lock:
+            statuses = dict(self.status)
+            current = self.current_agent
+            messages = dict(self.messages)
+
+        usage = tracker.get_all()
+        totals = tracker.totals()
+        models = tracker.get_models()
+
+        # Clear terminal and redraw.
+        print("\033[2J\033[H", end="")
+
+        print(
+            "╭────────────────────────────────────────────────────────────╮"
+        )
+
+        run_text = (
+            f"RUN #{self.run_number}"
+            if self.run_number is not None
+            else "AI DEV TEAM"
+        )
+
+        print(
+            f"│ 🤖 AI DEV TEAM                         "
+            f"{run_text:<10} {self._format_time()} │"
+        )
+
+        print(
+            "├────────────────────────────────────────────────────────────┤"
+        )
+        print("│ AGENTS                                                     │")
+        print("│                                                            │")
+
+        for agent in AGENTS:
+            status = statuses[agent]
+            symbol = self._status_symbol(status)
+            icon = ICONS[agent]
+
+            data = usage.get(agent)
+
+            if data:
+                tokens = f"{data.total_tokens:,}"
+                cost = f"${data.estimated_cost:.6f}"
+            else:
+                tokens = "0"
+                cost = "$0.000000"
+
+            print(
+                f"│ {icon} {agent:<12} "
+                f"{symbol} {status:<8} "
+                f"{tokens:>10} tok  {cost:>10} │"
+            )
+
+        print(
+            "├────────────────────────────────────────────────────────────┤"
+        )
+
+        print("│ CURRENT                                                    │")
+        print("│                                                            │")
+
+        if current:
+            icon = ICONS.get(current, "🤖")
+            message = messages.get(current) or "Working..."
+
+            print(
+                f"│ {icon} {current}                                        │"
+            )
+            print(f"│ {message[:56]:<56} │")
+        else:
+            print("│ No agent currently generating.                            │")
+
+        print("│                                                            │")
+
+        print(
+            "├────────────────────────────────────────────────────────────┤"
+        )
+        print("│ USAGE                                                      │")
+        print("│                                                            │")
+
+        print(
+            f"│ Total tokens   {totals.total_tokens:>10,}     "
+            f"API calls   {totals.calls:>4}                   │"
+        )
+
+        print(
+            f"│ Input tokens   {totals.input_tokens:>10,}     "
+            f"Output      {totals.output_tokens:>10,}       │"
+        )
+
+        print(
+            f"│ Estimated cost ${totals.estimated_cost:>10.6f}                     │"
+        )
+
+        print(
+            "╰────────────────────────────────────────────────────────────╯"
+        )
+
+        # Keep the screen from scrolling.
+        print(
+            "\nLive dashboard • "
+            "Ctrl+C still interrupts the team normally.",
+            flush=True,
+        )
+
+
+dashboard = Dashboard()

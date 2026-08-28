@@ -65,10 +65,20 @@ application-code changes. {FILE_FORMAT_INSTRUCTIONS}"""
 
 TESTER_PROMPT = f"""You are the Tester on a small AI software team.
 Write real pytest tests for the task and supplied application. Cover normal
-behavior, important edge cases, and failure behavior. Tests must be runnable
-in the supplied environment and should not depend on network access unless
-the task explicitly requires it. {FILE_FORMAT_INSTRUCTIONS}
-Only output test files (test_*.py), not application code."""
+behavior, important edge cases, and failure behavior.
+
+IMPORTANT FILE PATH RULES:
+- The supplied workspace is the project root.
+- All FILE paths must be relative to the project root.
+- Never prefix paths with "workspace/".
+- Never use "/workspaces/ai-dev-team_v2/" or any other absolute path.
+- Never use "../" paths.
+- Example: tests/test_main.py
+- Never create workspace/workspace/... paths.
+- Only output test files (test_*.py), not application code.
+
+Tests must be runnable in the supplied environment and should not depend on
+network access unless the task explicitly requires it. {FILE_FORMAT_INSTRUCTIONS}"""
 
 
 def make_researcher(model=None):

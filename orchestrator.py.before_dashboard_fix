@@ -50,12 +50,61 @@ MODEL_DEBUGGER = os.environ.get("AI_TEAM_DEBUGGER_MODEL", PRIMARY_MODEL)
 
 
 def log(msg: str):
-    events.emit("TEAM_LOG", message=msg)
+    print(f"[{datetime.now(timezone.utc).strftime('%H:%M:%S')}] {msg}", flush=True)
 
 
 def show_usage(current_agent: str | None = None):
-    """Compatibility hook; live usage is rendered by the dashboard."""
-    return
+    """Display current token usage for every agent."""
+    usage = tracker.get_all()
+    totals = tracker.totals()
+
+    agents = [
+        "Researcher",
+        "Architect",
+        "Developer",
+        "Reviewer",
+        "Security",
+        "Tester",
+        "Debugger",
+    ]
+
+    print()
+    print("╔══════════════════════════════════════════════════════════╗")
+    print("║              AI DEV TEAM — TOKEN USAGE                 ║")
+    print("╠══════════════╦════════════╦════════════╦═══════════════╣")
+    print("║ Agent        ║ Input      ║ Output     ║ Total         ║")
+    print("╠══════════════╬════════════╬════════════╬═══════════════╣")
+
+    for agent in agents:
+        data = usage.get(agent)
+
+        if data:
+            marker = " ◀" if agent == current_agent else ""
+            print(
+                f"║ {agent:<12} ║ "
+                f"{data.input_tokens:>10,} ║ "
+                f"{data.output_tokens:>10,} ║ "
+                f"{data.total_tokens:>13,} ║{marker}"
+            )
+        else:
+            marker = " ◀" if agent == current_agent else ""
+            print(
+                f"║ {agent:<12} ║ "
+                f"{0:>10,} ║ "
+                f"{0:>10,} ║ "
+                f"{0:>13,} ║{marker}"
+            )
+
+    print("╠══════════════╬════════════╬════════════╬═══════════════╣")
+    print(
+        f"║ {'TOTAL':<12} ║ "
+        f"{totals.input_tokens:>10,} ║ "
+        f"{totals.output_tokens:>10,} ║ "
+        f"{totals.total_tokens:>13,} ║"
+    )
+    print("╚══════════════╩════════════╩════════════╩═══════════════╝")
+    print(f"API calls: {totals.calls}")
+    print()
 
 
 def _safe_context(paths: list[str], workspace_dir: str) -> str:
@@ -421,15 +470,23 @@ IMPORTANT TESTING RULES:
     }
 
 
-    events.emit(
-        "TEAM_LOG",
-        message=(
-            f"Run #{run_number} complete — "
-            f"{final_totals.total_tokens:,} tokens, "
-            f"{final_totals.calls} API calls, "
-            f"${final_totals.estimated_cost:.6f} estimated cost."
-        ),
+    print("══════════════════════════════════════════════════════════")
+    print(f"                 RUN #{run_number} COMPLETE")
+    print("══════════════════════════════════════════════════════════")
+    print(
+        f"Total tokens: {final_totals.total_tokens:,}"
     )
+    print(
+        f"Estimated API cost: ${final_totals.estimated_cost:.6f}"
+    )
+    print(
+        f"API calls: {final_totals.calls}"
+    )
+    print(
+        f"History: {workspace / 'run_history.json'}"
+    )
+    print("══════════════════════════════════════════════════════════")
+    print()
 
     (workspace / "run_log.json").write_text(
         json.dumps(run_log, indent=2)

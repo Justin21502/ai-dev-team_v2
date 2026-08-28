@@ -1,0 +1,1410 @@
+[2J[H╭────────────────────────────────────────────────────────────╮
+│ 🤖 AI DEV TEAM                         AI DEV TEAM 00:00:00 │
+├────────────────────────────────────────────────────────────┤
+│ AGENTS                                                     │
+│                                                            │
+│ 🔎 Researcher   ○ WAITING           0 tok   $0.000000 │
+│ 🏗️ Architect    ○ WAITING           0 tok   $0.000000 │
+│ 💻 Developer    ○ WAITING           0 tok   $0.000000 │
+│ 🔍 Reviewer     ○ WAITING           0 tok   $0.000000 │
+│ 🔐 Security     ○ WAITING           0 tok   $0.000000 │
+│ 🧪 Tester       ○ WAITING           0 tok   $0.000000 │
+│ 🐛 Debugger     ○ WAITING           0 tok   $0.000000 │
+├────────────────────────────────────────────────────────────┤
+│ CURRENT                                                    │
+│                                                            │
+│ No agent currently generating.                            │
+│                                                            │
+├────────────────────────────────────────────────────────────┤
+│ USAGE                                                      │
+│                                                            │
+│ Total tokens            0     API calls      0                   │
+│ Input tokens            0     Output               0       │
+│ Estimated cost $  0.000000                     │
+╰────────────────────────────────────────────────────────────╯
+
+Live dashboard • Ctrl+C still interrupts the team normally.
+[2J[H╭────────────────────────────────────────────────────────────╮
+│ 🤖 AI DEV TEAM                         AI DEV TEAM 00:00:00 │
+├────────────────────────────────────────────────────────────┤
+│ AGENTS                                                     │
+│                                                            │
+│ 🔎 Researcher   ○ WAITING           0 tok   $0.000000 │
+│ 🏗️ Architect    ○ WAITING           0 tok   $0.000000 │
+│ 💻 Developer    ○ WAITING           0 tok   $0.000000 │
+│ 🔍 Reviewer     ○ WAITING           0 tok   $0.000000 │
+│ 🔐 Security     ○ WAITING           0 tok   $0.000000 │
+│ 🧪 Tester       ○ WAITING           0 tok   $0.000000 │
+│ 🐛 Debugger     ○ WAITING           0 tok   $0.000000 │
+├────────────────────────────────────────────────────────────┤
+│ CURRENT                                                    │
+│                                                            │
+│ No agent currently generating.                            │
+│                                                            │
+├────────────────────────────────────────────────────────────┤
+│ USAGE                                                      │
+│                                                            │
+│ Total tokens            0     API calls      0                   │
+│ Input tokens            0     Output               0       │
+│ Estimated cost $  0.000000                     │
+╰────────────────────────────────────────────────────────────╯
+
+Live dashboard • Ctrl+C still interrupts the team normally.
+[21:12:20] Researcher is searching the web...
+[2J[H╭────────────────────────────────────────────────────────────╮
+│ 🤖 AI DEV TEAM                         AI DEV TEAM 00:00:11 │
+├────────────────────────────────────────────────────────────┤
+│ AGENTS                                                     │
+│                                                            │
+│ 🔎 Researcher   ● WORKING           0 tok   $0.000000 │
+│ 🏗️ Architect    ○ WAITING           0 tok   $0.000000 │
+│ 💻 Developer    ○ WAITING           0 tok   $0.000000 │
+│ 🔍 Reviewer     ○ WAITING           0 tok   $0.000000 │
+│ 🔐 Security     ○ WAITING           0 tok   $0.000000 │
+│ 🧪 Tester       ○ WAITING           0 tok   $0.000000 │
+│ 🐛 Debugger     ○ WAITING           0 tok   $0.000000 │
+├────────────────────────────────────────────────────────────┤
+│ CURRENT                                                    │
+│                                                            │
+│ 🔎 Researcher                                        │
+│ Generating response...                                   │
+│                                                            │
+├────────────────────────────────────────────────────────────┤
+│ USAGE                                                      │
+│                                                            │
+│ Total tokens            0     API calls      0                   │
+│ Input tokens            0     Output               0       │
+│ Estimated cost $  0.000000                     │
+╰────────────────────────────────────────────────────────────╯
+
+Live dashboard • Ctrl+C still interrupts the team normally.
+
+[Researcher] openai/gpt-oss-20b is generating:
+**Quick‑Start Notes – Hello‑World + Pytest Project**
+
+| Topic | Key Points | Source |
+|-------|------------|--------|
+| **Project layout** | • `src/hello.py` – contains a `hello()` function that prints “Hello, World!”.<br>• `tests/test_hello.py` – pytest test file that imports `hello` and verifies output via `capsys`. | GitHub example: https://github.com/kieferland/pytest_hello_world |
+| **Dependencies** | • `pytest` (latest stable, e.g., 7.1.x).<br>• Optional: `pytest-cov` for coverage, `pytest-mock` for mocks. | Pytest docs: https://docs.pytest.org/en/7.1.x/getting-started.html |
+| **Test discovery** | Pytest automatically runs files matching `test_*.py` or `*_test.py`. No extra config needed for a simple project. | Pytest docs: https://docs.pytest.org/en/7.1.x/getting-started.html |
+| **Capturing stdout** | Use the `capsys` fixture to capture printed output:<br>`def test_print_output(capsys): print("Hello, World!") captured = capsys.readouterr(); assert captured.out == "Hello, World!\n"` | Example: https://oneuptime.com/blog/post/2026-01-25-unit-tests-pytest-python/view |
+| **Best‑practice: test naming** | Prefix test functions with `test_`. Avoid repetitive tests – use `@pytest.mark.parametrize` for variations. | Obed Macallums guide: https://obedmacallums.com/posts/testing-python-pytest/ |
+| **Running tests** | • `pytest -s` to see prints.<br>• `pytest --lf` to run only failed tests.<br>• `pytest --maxfail=3` to stop after 3 failures. | Obed Macallums guide |
+| **Logging tests** | Use `caplog` fixture to assert log output: <br>`def test_logging_output(caplog): logger.warning("Test warning"); assert "Test warning" in caplog.text` | Example: https://oneuptime.com/blog/post/2026-01-25-unit-tests-pytest-python/view |
+| **Exception tests** | `with pytest.raises(ValueError): int("not a number")` – assert exception type and message if needed. | Example: https://oneuptime.com/blog/post/2026-01-25-unit-tests-pytest-python/view |
+| **Compatibility** | • Python 3.8+ recommended for full pytest 7.x support.<br>• Ensure `pytest` is installed in a virtual environment (`python -m venv venv`). | Pytest docs |
+| **Pitfalls** | • Forgetting to import the function under test in the test file.<br>• Relying on `print` for program logic – tests should assert return values when possible.<br>• Mixing `print` and `logging` without proper capture can lead to noisy test output. | General best‑practice notes from sources |
+
+**Action Items for Architect/Developer**
+
+1. **Create a minimal `src/hello.py`** with a `hello()` function that prints “Hello, World!”.
+2. **Add `tests/test_hello.py`** using `capsys` to capture and assert the output.
+3. **Set up a `requirements.txt`** with `pytest>=7.1`.
+4. **Run `pytest -s`** to confirm the test passes and prints appear.
+5. **Consider adding a `pytest.ini`** if you want custom verbosity or markers later.
+
+These steps give a clean, test‑driven Hello‑World project that follows current pytest conventions and avoids common pitfalls.
+
+[2J[H╭────────────────────────────────────────────────────────────╮
+│ 🤖 AI DEV TEAM                         AI DEV TEAM 00:00:13 │
+├────────────────────────────────────────────────────────────┤
+│ AGENTS                                                     │
+│                                                            │
+│ 🔎 Researcher   ✓ DONE          1,818 tok   $0.000329 │
+│ 🏗️ Architect    ○ WAITING           0 tok   $0.000000 │
+│ 💻 Developer    ○ WAITING           0 tok   $0.000000 │
+│ 🔍 Reviewer     ○ WAITING           0 tok   $0.000000 │
+│ 🔐 Security     ○ WAITING           0 tok   $0.000000 │
+│ 🧪 Tester       ○ WAITING           0 tok   $0.000000 │
+│ 🐛 Debugger     ○ WAITING           0 tok   $0.000000 │
+├────────────────────────────────────────────────────────────┤
+│ CURRENT                                                    │
+│                                                            │
+│ 🔎 Researcher                                        │
+│ Completed                                                │
+│                                                            │
+├────────────────────────────────────────────────────────────┤
+│ USAGE                                                      │
+│                                                            │
+│ Total tokens        1,818     API calls      1                   │
+│ Input tokens          961     Output             857       │
+│ Estimated cost $  0.000329                     │
+╰────────────────────────────────────────────────────────────╯
+
+Live dashboard • Ctrl+C still interrupts the team normally.
+
+╔══════════════════════════════════════════════════════════╗
+║              AI DEV TEAM — TOKEN USAGE                 ║
+╠══════════════╦════════════╦════════════╦═══════════════╣
+║ Agent        ║ Input      ║ Output     ║ Total         ║
+╠══════════════╬════════════╬════════════╬═══════════════╣
+║ Researcher   ║        961 ║        857 ║         1,818 ║ ◀
+║ Architect    ║          0 ║          0 ║             0 ║
+║ Developer    ║          0 ║          0 ║             0 ║
+║ Reviewer     ║          0 ║          0 ║             0 ║
+║ Security     ║          0 ║          0 ║             0 ║
+║ Tester       ║          0 ║          0 ║             0 ║
+║ Debugger     ║          0 ║          0 ║             0 ║
+╠══════════════╬════════════╬════════════╬═══════════════╣
+║ TOTAL        ║        961 ║        857 ║         1,818 ║
+╚══════════════╩════════════╩════════════╩═══════════════╝
+API calls: 1
+
+[21:12:34] Research notes ready.
+[21:12:34] Architect is planning...
+[2J[H╭────────────────────────────────────────────────────────────╮
+│ 🤖 AI DEV TEAM                         AI DEV TEAM 00:00:13 │
+├────────────────────────────────────────────────────────────┤
+│ AGENTS                                                     │
+│                                                            │
+│ 🔎 Researcher   ✓ DONE          1,818 tok   $0.000329 │
+│ 🏗️ Architect    ● WORKING           0 tok   $0.000000 │
+│ 💻 Developer    ○ WAITING           0 tok   $0.000000 │
+│ 🔍 Reviewer     ○ WAITING           0 tok   $0.000000 │
+│ 🔐 Security     ○ WAITING           0 tok   $0.000000 │
+│ 🧪 Tester       ○ WAITING           0 tok   $0.000000 │
+│ 🐛 Debugger     ○ WAITING           0 tok   $0.000000 │
+├────────────────────────────────────────────────────────────┤
+│ CURRENT                                                    │
+│                                                            │
+│ 🏗️ Architect                                        │
+│ Generating response...                                   │
+│                                                            │
+├────────────────────────────────────────────────────────────┤
+│ USAGE                                                      │
+│                                                            │
+│ Total tokens        1,818     API calls      1                   │
+│ Input tokens          961     Output             857       │
+│ Estimated cost $  0.000329                     │
+╰────────────────────────────────────────────────────────────╯
+
+Live dashboard • Ctrl+C still interrupts the team normally.
+
+[Architect] openai/gpt-oss-120b is generating:
+**Implementation Plan – “Hello‑World + Pytest” starter project**
+
+| Step | Artifact | What to create / modify | Rationale / Design decision |
+|------|----------|--------------------------|------------------------------|
+| 1 | Repository root | Add a **README.md** (brief description, how to run tests) and a **.gitignore** (ignore `venv/`, `__pycache__/`, `.pytest_cache/`). | Gives immediate onboarding info; keeps repo clean. |
+| 2 | `src/hello.py` | Create a module with a single public function `def hello() -> None:` that does `print("Hello, World!")`. Export the name via `__all__ = ["hello"]`. | Keeps production code isolated under `src/` (PEP‑420 namespace‑package friendly). The function returns `None` – the test will verify the side‑effect (stdout). |
+| 3 | `tests/test_hello.py` | Create a pytest test file that: <br>• imports `hello` from `src.hello` <br>• calls `hello()` <br>• uses the `capsys` fixture to capture stdout <br>• asserts `captured.out == "Hello, World!\n"` | Demonstrates the canonical way to test printed output; uses the default discovery pattern (`test_*.py`). |
+| 4 | `requirements.txt` | Add a single line: `pytest>=7.1,<8`. (Optional: `pytest-cov` for coverage, `pytest-mock` for future mocks.) | Pinning to the 7.x series avoids breaking changes while staying current. |
+| 5 | `pyproject.toml` (optional but recommended) | Minimal stub to declare build system (`[build-system] requires = ["setuptools", "wheel"] build-backend = "setuptools.build_meta"`). | Allows tools like `pip install -e .` and future packaging without extra config. |
+| 6 | `setup.cfg` or `setup.py` (lightweight) | Provide `package_dir = {"": "src"}` and `packages = find:` so that `src` is treated as the top‑level package. | Enables `import src.hello` in tests without needing `PYTHONPATH` hacks. |
+| 7 | `pytest.ini` (optional) | Add a tiny config: `[pytest] addopts = -ra -q` (quiet summary, show extra info on failures). | Gives a sane default for developers; can be omitted if you prefer pure CLI flags. |
+| 8 | Virtual‑environment script | Add a `makefile` or simple shell script (`setup.sh`) that: <br>• creates `python -m venv venv` <br>• activates it <br>• runs `pip install -r requirements.txt -e .` <br>• runs `pytest -s` to verify everything works. | Automates first‑time setup and demonstrates the workflow. |
+| 9 | CI stub (optional) | Add a minimal GitHub Actions workflow (`.github/workflows/ci.yml`) that installs Python 3.11, the venv, and runs `pytest`. | Guarantees that the test passes in CI; low overhead for a starter repo. |
+
+---
+
+### Approach & Workflow
+
+1. **Create the repo** (or branch) and add the files above.
+2. **Run locally**:  
+   ```bash
+   python -m venv venv
+   source venv/bin/activate
+   pip install -r requirements.txt -e .
+   pytest -s
+   ```
+   Expected output: the test passes and the printed “Hello, World!” appears because of `-s`.
+3. **Commit** the initial state, push, and verify CI (if added) runs successfully.
+
+---
+
+### Design Decisions
+
+| Decision | Reason |
+|----------|--------|
+| **`src/` layout** | Aligns with modern packaging recommendations; isolates production code from tests. |
+| **Function returns `None`** | Keeps the example minimal; the test focuses on the observable side‑effect (stdout). |
+| **Use `capsys` fixture** | The canonical, built‑in way to capture `print` output; no extra dependencies. |
+| **Pin pytest to `<8`** | Prevents accidental breakage from a future major release while still receiving bug fixes. |
+| **Provide `requirements.txt` + optional `pyproject.toml`** | Supports both classic `pip install -r` workflow and newer PEP‑517 builds. |
+| **Minimal `pytest.ini`** | Gives a clean default run; developers can extend later without changing code. |
+| **Add CI** | Even a tiny project benefits from a “green‑only” gate; demonstrates best practice. |
+
+---
+
+### Dependencies
+
+| Dependency | Version constraint | Why needed |
+|------------|-------------------|------------|
+| `pytest` | `>=7.1,<8` | Test runner, fixtures (`capsys`). |
+| (optional) `pytest-cov` | `>=4,<5` | Coverage reporting if the team wants it later. |
+| (optional) `pytest-mock` | `>=3,<4` | Provides `mocker` fixture for future mocking. |
+| `setuptools` & `wheel` | default (latest) | Required for editable install (`-e .`). |
+
+All dependencies are pure‑Python and installable in a standard virtual environment.
+
+---
+
+### Risks & Mitigations
+
+| Risk | Impact | Mitigation |
+|------|--------|------------|
+| **Missing `src` on `PYTHONPATH`** – tests may fail to import `hello`. | Build breakage for new contributors. | Use `setup.cfg`/`pyproject.toml` with `package_dir={"": "src"}` and install the project in editable mode (`pip install -e .`). |
+| **Future pytest major release introduces breaking changes** (e.g., fixture name changes). | CI/test failures. | Pin major version (`<8`) and update the pin when a new stable series is vetted. |
+| **Running tests without the virtual environment** (system‑wide packages conflict). | Inconsistent results across machines. | Provide a `setup.sh` / `Makefile` target that creates and activates the venv; document in README. |
+| **Printing vs returning** – the example relies on side‑effects, which is less realistic for production code. | May encourage anti‑pattern. | Add a comment in `hello.py` noting that real logic should return values; this repo is purely illustrative. |
+| **Windows path handling** for activation scripts. | Developers on Windows may stumble. | In the setup script, include both `source venv/bin/activate` (Unix) and `venv\Scripts\activate` (Windows) instructions. |
+
+---
+
+### Summary
+
+- **Files to add**: `src/hello.py`, `tests/test_hello.py`, `requirements.txt`, optional `pyproject.toml`, `setup.cfg`, `README.md`, `.gitignore`, optional `pytest.ini`, optional CI workflow, optional setup script.
+- **Core flow**: `hello()` prints, test captures via `capsys`, asserts exact output.
+- **Dependencies**: only `pytest` (plus optional helpers) – lightweight, no external services.
+- **Risks** are limited to import path and future version bumps; mitigated by editable install and version pinning.
+
+Following this plan yields a clean, reproducible “Hello‑World + Pytest” starter that can be cloned, set up, and run in under a minute.
+
+[2J[H╭────────────────────────────────────────────────────────────╮
+│ 🤖 AI DEV TEAM                         AI DEV TEAM 00:00:16 │
+├────────────────────────────────────────────────────────────┤
+│ AGENTS                                                     │
+│                                                            │
+│ 🔎 Researcher   ✓ DONE          1,818 tok   $0.000329 │
+│ 🏗️ Architect    ✓ DONE          2,606 tok   $0.001127 │
+│ 💻 Developer    ○ WAITING           0 tok   $0.000000 │
+│ 🔍 Reviewer     ○ WAITING           0 tok   $0.000000 │
+│ 🔐 Security     ○ WAITING           0 tok   $0.000000 │
+│ 🧪 Tester       ○ WAITING           0 tok   $0.000000 │
+│ 🐛 Debugger     ○ WAITING           0 tok   $0.000000 │
+├────────────────────────────────────────────────────────────┤
+│ CURRENT                                                    │
+│                                                            │
+│ 🏗️ Architect                                        │
+│ Completed                                                │
+│                                                            │
+├────────────────────────────────────────────────────────────┤
+│ USAGE                                                      │
+│                                                            │
+│ Total tokens        4,424     API calls      2                   │
+│ Input tokens        1,932     Output           2,492       │
+│ Estimated cost $  0.001456                     │
+╰────────────────────────────────────────────────────────────╯
+
+Live dashboard • Ctrl+C still interrupts the team normally.
+
+╔══════════════════════════════════════════════════════════╗
+║              AI DEV TEAM — TOKEN USAGE                 ║
+╠══════════════╦════════════╦════════════╦═══════════════╣
+║ Agent        ║ Input      ║ Output     ║ Total         ║
+╠══════════════╬════════════╬════════════╬═══════════════╣
+║ Researcher   ║        961 ║        857 ║         1,818 ║
+║ Architect    ║        971 ║      1,635 ║         2,606 ║ ◀
+║ Developer    ║          0 ║          0 ║             0 ║
+║ Reviewer     ║          0 ║          0 ║             0 ║
+║ Security     ║          0 ║          0 ║             0 ║
+║ Tester       ║          0 ║          0 ║             0 ║
+║ Debugger     ║          0 ║          0 ║             0 ║
+╠══════════════╬════════════╬════════════╬═══════════════╣
+║ TOTAL        ║      1,932 ║      2,492 ║         4,424 ║
+╚══════════════╩════════════╩════════════╩═══════════════╝
+API calls: 2
+
+[21:12:37] Plan ready.
+[21:12:37] Developer is writing the first draft...
+[2J[H╭────────────────────────────────────────────────────────────╮
+│ 🤖 AI DEV TEAM                         AI DEV TEAM 00:00:16 │
+├────────────────────────────────────────────────────────────┤
+│ AGENTS                                                     │
+│                                                            │
+│ 🔎 Researcher   ✓ DONE          1,818 tok   $0.000329 │
+│ 🏗️ Architect    ✓ DONE          2,606 tok   $0.001127 │
+│ 💻 Developer    ● WORKING           0 tok   $0.000000 │
+│ 🔍 Reviewer     ○ WAITING           0 tok   $0.000000 │
+│ 🔐 Security     ○ WAITING           0 tok   $0.000000 │
+│ 🧪 Tester       ○ WAITING           0 tok   $0.000000 │
+│ 🐛 Debugger     ○ WAITING           0 tok   $0.000000 │
+├────────────────────────────────────────────────────────────┤
+│ CURRENT                                                    │
+│                                                            │
+│ 💻 Developer                                        │
+│ Generating response...                                   │
+│                                                            │
+├────────────────────────────────────────────────────────────┤
+│ USAGE                                                      │
+│                                                            │
+│ Total tokens        4,424     API calls      2                   │
+│ Input tokens        1,932     Output           2,492       │
+│ Estimated cost $  0.001456                     │
+╰────────────────────────────────────────────────────────────╯
+
+Live dashboard • Ctrl+C still interrupts the team normally.
+
+[Developer] openai/gpt-oss-120b is generating:
+### FILE: README.md
+```markdown
+# Hello World + Pytest Starter Project
+
+A minimal Python project that demonstrates a simple `hello()` function
+which prints **Hello, World!** and includes a pytest test that verifies the
+output.
+
+## Project Structure
+
+```
+.
+├── src
+│   ├── __init__.py
+│   └── hello.py
+├── tests
+│   └── test_hello.py
+├── requirements.txt
+├── setup.cfg
+├── pyproject.toml
+├── pytest.ini
+├── .gitignore
+├── README.md
+└── setup.sh
+```
+
+## Getting Started
+
+### 1. Create a virtual environment and install the project
+
+```bash
+./setup.sh
+```
+
+The script will:
+
+1. Create a virtual environment in `venv/`.
+2. Activate the environment.
+3. Install the project in editable mode (`pip install -e .`) along with the test
+   dependencies.
+4. Run the test suite with `pytest -s`.
+
+### 2. Run the tests manually
+
+```bash
+source venv/bin/activate   # On Windows: venv\Scripts\activate
+pytest -s
+```
+
+You should see the test pass and the printed line:
+
+```
+Hello, World!
+```
+
+## How It Works
+
+- **src/hello.py** – defines `hello()` which prints the greeting.
+- **tests/test_hello.py** – uses pytest’s `capsys` fixture to capture stdout
+  and asserts that the output matches `"Hello, World!\n"`.
+
+## Packaging
+
+The project uses a classic `setup.cfg` + `pyproject.toml` configuration,
+allowing `pip install -e .` to work without additional scripts.
+
+## CI (GitHub Actions)
+
+A minimal CI workflow is provided in `.github/workflows/ci.yml`. It runs the
+tests on each push and pull request using Python 3.11.
+
+---
+
+Happy coding! 🚀
+```
+
+### FILE: .gitignore
+```gitignore
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual environments
+venv/
+ENV/
+env/
+.venv/
+env.bak/
+venv.bak/
+
+# Pytest cache
+.pytest_cache/
+cover/
+
+# IDE / editor folders
+.idea/
+.vscode/
+*.swp
+*~
+```
+
+### FILE: requirements.txt
+```text
+pytest>=7.1,<8
+```
+
+### FILE: pyproject.toml
+```toml
+[build-system]
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"
+```
+
+### FILE: setup.cfg
+```ini
+[metadata]
+name = hello-world-pytest
+version = 0.1.0
+description = Simple hello world package with pytest tests
+author = Your Name
+license = MIT
+long_description = file: README.md
+long_description_content_type = text/markdown
+classifiers =
+    Programming Language :: Python :: 3
+    License :: OSI Approved :: MIT License
+    Operating System :: OS Independent
+
+[options]
+package_dir =
+    = src
+packages = find:
+python_requires = >=3.8
+
+[options.packages.find]
+where = src
+```
+
+### FILE: src/__init__.py
+```python
+# This file makes `src` a package.
+```
+
+### FILE: src/hello.py
+```python
+"""Simple hello world module."""
+
+__all__ = ["hello"]
+
+
+def hello() -> None:
+    """Print 'Hello, World!' to standard output."""
+    print("Hello, World!")
+```
+
+### FILE: tests/test_hello.py
+```python
+"""Tests for the hello module."""
+
+import src.hello as hello_module
+
+
+def test_hello_prints_message(capsys):
+    """Ensure hello() prints the expected greeting."""
+    hello_module.hello()
+    captured = capsys.readouterr()
+    assert captured.out == "Hello, World!\n"
+```
+
+### FILE: pytest.ini
+```ini
+[pytest]
+addopts = -ra -q
+testpaths = tests
+```
+
+### FILE: setup.sh
+```bash
+#!/usr/bin/env bash
+set -e
+
+# Create virtual environment if it doesn't exist
+if [ ! -d "venv" ]; then
+    python3 -m venv venv
+fi
+
+# Activate the virtual environment
+# shellcheck disable=SC1091
+source venv/bin/activate
+
+# Upgrade pip and install the project in editable mode with test deps
+pip install --upgrade pip
+pip install -e . -r requirements.txt
+
+# Run the test suite (show printed output)
+pytest -s
+```
+
+### FILE: .github/workflows/ci.yml
+```yaml
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        run: |
+          python -m venv venv
+          source venv/bin/activate
+          pip install --upgrade pip
+          pip install -e . -r requirements.txt
+
+      - name: Run tests
+        run: |
+          source venv/bin/activate
+          pytest -q
+```
+
+[2J[H╭────────────────────────────────────────────────────────────╮
+│ 🤖 AI DEV TEAM                         AI DEV TEAM 00:00:21 │
+├────────────────────────────────────────────────────────────┤
+│ AGENTS                                                     │
+│                                                            │
+│ 🔎 Researcher   ✓ DONE          1,818 tok   $0.000329 │
+│ 🏗️ Architect    ✓ DONE          2,606 tok   $0.001127 │
+│ 💻 Developer    ✓ DONE          3,766 tok   $0.001436 │
+│ 🔍 Reviewer     ○ WAITING           0 tok   $0.000000 │
+│ 🔐 Security     ○ WAITING           0 tok   $0.000000 │
+│ 🧪 Tester       ○ WAITING           0 tok   $0.000000 │
+│ 🐛 Debugger     ○ WAITING           0 tok   $0.000000 │
+├────────────────────────────────────────────────────────────┤
+│ CURRENT                                                    │
+│                                                            │
+│ 💻 Developer                                        │
+│ Completed                                                │
+│                                                            │
+├────────────────────────────────────────────────────────────┤
+│ USAGE                                                      │
+│                                                            │
+│ Total tokens        8,190     API calls      3                   │
+│ Input tokens        3,763     Output           4,427       │
+│ Estimated cost $  0.002891                     │
+╰────────────────────────────────────────────────────────────╯
+
+Live dashboard • Ctrl+C still interrupts the team normally.
+
+╔══════════════════════════════════════════════════════════╗
+║              AI DEV TEAM — TOKEN USAGE                 ║
+╠══════════════╦════════════╦════════════╦═══════════════╣
+║ Agent        ║ Input      ║ Output     ║ Total         ║
+╠══════════════╬════════════╬════════════╬═══════════════╣
+║ Researcher   ║        961 ║        857 ║         1,818 ║
+║ Architect    ║        971 ║      1,635 ║         2,606 ║
+║ Developer    ║      1,831 ║      1,935 ║         3,766 ║ ◀
+║ Reviewer     ║          0 ║          0 ║             0 ║
+║ Security     ║          0 ║          0 ║             0 ║
+║ Tester       ║          0 ║          0 ║             0 ║
+║ Debugger     ║          0 ║          0 ║             0 ║
+╠══════════════╬════════════╬════════════╬═══════════════╣
+║ TOTAL        ║      3,763 ║      4,427 ║         8,190 ║
+╚══════════════╩════════════╩════════════╩═══════════════╝
+API calls: 3
+
+[21:12:42] Reviewer round 1...
+[2J[H╭────────────────────────────────────────────────────────────╮
+│ 🤖 AI DEV TEAM                         AI DEV TEAM 00:00:21 │
+├────────────────────────────────────────────────────────────┤
+│ AGENTS                                                     │
+│                                                            │
+│ 🔎 Researcher   ✓ DONE          1,818 tok   $0.000329 │
+│ 🏗️ Architect    ✓ DONE          2,606 tok   $0.001127 │
+│ 💻 Developer    ✓ DONE          3,766 tok   $0.001436 │
+│ 🔍 Reviewer     ● WORKING           0 tok   $0.000000 │
+│ 🔐 Security     ○ WAITING           0 tok   $0.000000 │
+│ 🧪 Tester       ○ WAITING           0 tok   $0.000000 │
+│ 🐛 Debugger     ○ WAITING           0 tok   $0.000000 │
+├────────────────────────────────────────────────────────────┤
+│ CURRENT                                                    │
+│                                                            │
+│ 🔍 Reviewer                                        │
+│ Generating response...                                   │
+│                                                            │
+├────────────────────────────────────────────────────────────┤
+│ USAGE                                                      │
+│                                                            │
+│ Total tokens        8,190     API calls      3                   │
+│ Input tokens        3,763     Output           4,427       │
+│ Estimated cost $  0.002891                     │
+╰────────────────────────────────────────────────────────────╯
+
+Live dashboard • Ctrl+C still interrupts the team normally.
+
+[Reviewer] openai/gpt-oss-20b is generating:
+
+
+[2J[H╭────────────────────────────────────────────────────────────╮
+│ 🤖 AI DEV TEAM                         AI DEV TEAM 00:00:23 │
+├────────────────────────────────────────────────────────────┤
+│ AGENTS                                                     │
+│                                                            │
+│ 🔎 Researcher   ✓ DONE          1,818 tok   $0.000329 │
+│ 🏗️ Architect    ✓ DONE          2,606 tok   $0.001127 │
+│ 💻 Developer    ✓ DONE          3,766 tok   $0.001436 │
+│ 🔍 Reviewer     ✓ DONE          3,091 tok   $0.000693 │
+│ 🔐 Security     ○ WAITING           0 tok   $0.000000 │
+│ 🧪 Tester       ○ WAITING           0 tok   $0.000000 │
+│ 🐛 Debugger     ○ WAITING           0 tok   $0.000000 │
+├────────────────────────────────────────────────────────────┤
+│ CURRENT                                                    │
+│                                                            │
+│ 🔍 Reviewer                                        │
+│ Completed                                                │
+│                                                            │
+├────────────────────────────────────────────────────────────┤
+│ USAGE                                                      │
+│                                                            │
+│ Total tokens       11,281     API calls      4                   │
+│ Input tokens        4,806     Output           6,475       │
+│ Estimated cost $  0.003584                     │
+╰────────────────────────────────────────────────────────────╯
+
+Live dashboard • Ctrl+C still interrupts the team normally.
+
+╔══════════════════════════════════════════════════════════╗
+║              AI DEV TEAM — TOKEN USAGE                 ║
+╠══════════════╦════════════╦════════════╦═══════════════╣
+║ Agent        ║ Input      ║ Output     ║ Total         ║
+╠══════════════╬════════════╬════════════╬═══════════════╣
+║ Researcher   ║        961 ║        857 ║         1,818 ║
+║ Architect    ║        971 ║      1,635 ║         2,606 ║
+║ Developer    ║      1,831 ║      1,935 ║         3,766 ║
+║ Reviewer     ║      1,043 ║      2,048 ║         3,091 ║ ◀
+║ Security     ║          0 ║          0 ║             0 ║
+║ Tester       ║          0 ║          0 ║             0 ║
+║ Debugger     ║          0 ║          0 ║             0 ║
+╠══════════════╬════════════╬════════════╬═══════════════╣
+║ TOTAL        ║      4,806 ║      6,475 ║        11,281 ║
+╚══════════════╩════════════╩════════════╩═══════════════╝
+API calls: 4
+
+[21:12:44] Reviewer requested changes. Sending back to Developer...
+[2J[H╭────────────────────────────────────────────────────────────╮
+│ 🤖 AI DEV TEAM                         AI DEV TEAM 00:00:23 │
+├────────────────────────────────────────────────────────────┤
+│ AGENTS                                                     │
+│                                                            │
+│ 🔎 Researcher   ✓ DONE          1,818 tok   $0.000329 │
+│ 🏗️ Architect    ✓ DONE          2,606 tok   $0.001127 │
+│ 💻 Developer    ● WORKING       3,766 tok   $0.001436 │
+│ 🔍 Reviewer     ✓ DONE          3,091 tok   $0.000693 │
+│ 🔐 Security     ○ WAITING           0 tok   $0.000000 │
+│ 🧪 Tester       ○ WAITING           0 tok   $0.000000 │
+│ 🐛 Debugger     ○ WAITING           0 tok   $0.000000 │
+├────────────────────────────────────────────────────────────┤
+│ CURRENT                                                    │
+│                                                            │
+│ 💻 Developer                                        │
+│ Generating response...                                   │
+│                                                            │
+├────────────────────────────────────────────────────────────┤
+│ USAGE                                                      │
+│                                                            │
+│ Total tokens       11,281     API calls      4                   │
+│ Input tokens        4,806     Output           6,475       │
+│ Estimated cost $  0.003584                     │
+╰────────────────────────────────────────────────────────────╯
+
+Live dashboard • Ctrl+C still interrupts the team normally.
+
+[Developer] openai/gpt-oss-120b is generating:
+### FILE: workspace/README.md
+```
+# Hello World + Pytest Starter Project
+
+A minimal Python project that demonstrates a simple `hello()` function
+which prints **Hello, World!** and includes a pytest test that verifies the
+output.
+
+## Project Structure
+
+```
+workspace/
+├── .gitignore
+├── .github/
+│   └── workflows/
+│       └── ci.yml          # GitHub Actions CI workflow
+├── pytest.ini               # Pytest configuration
+├── requirements.txt         # Test dependencies
+├── setup.cfg                # Package metadata and options
+├── setup.sh                 # Helper script to set up a virtualenv and run tests
+├── src/
+│   ├── __init__.py          # Makes `src` a package
+│   └── hello.py             # Contains the `hello` function
+└── tests/
+    └── test_hello.py        # Pytest test for the `hello` function
+```
+
+## Getting Started
+
+### Prerequisites
+
+- Python 3.8 or newer
+- `git` (for cloning the repository)
+
+### Setup
+
+You can use the provided `setup.sh` script to create a virtual environment,
+install the package in editable mode, and run the test suite:
+
+```bash
+./setup.sh
+```
+
+Alternatively, set up manually:
+
+```bash
+python3 -m venv venv
+source venv/bin/activate
+pip install --upgrade pip
+pip install -e . -r requirements.txt
+```
+
+### Running the Hello World Function
+
+You can invoke the function directly from Python:
+
+```python
+>>> from src.hello import hello
+>>> hello()
+Hello, World!
+```
+
+Or run it as a module:
+
+```bash
+python -m src.hello
+```
+
+### Running Tests
+
+With the virtual environment activated, run:
+
+```bash
+pytest -q
+```
+
+The test suite includes a single test that ensures `hello()` prints the expected
+message.
+
+## License
+
+This project is licensed under the MIT License – see the `LICENSE` file for
+details.
+```
+
+### FILE: workspace/src/hello.py
+```python
+"""Simple hello world module."""
+
+__all__ = ["hello"]
+
+
+def hello() -> None:
+    """Print 'Hello, World!' to standard output."""
+    print("Hello, World!")
+
+
+if __name__ == "__main__":
+    # Allows the module to be executed directly:
+    #   python -m src.hello
+    hello()
+```
+
+[2J[H╭────────────────────────────────────────────────────────────╮
+│ 🤖 AI DEV TEAM                         AI DEV TEAM 00:00:26 │
+├────────────────────────────────────────────────────────────┤
+│ AGENTS                                                     │
+│                                                            │
+│ 🔎 Researcher   ✓ DONE          1,818 tok   $0.000329 │
+│ 🏗️ Architect    ✓ DONE          2,606 tok   $0.001127 │
+│ 💻 Developer    ✓ DONE          5,790 tok   $0.002146 │
+│ 🔍 Reviewer     ✓ DONE          3,091 tok   $0.000693 │
+│ 🔐 Security     ○ WAITING           0 tok   $0.000000 │
+│ 🧪 Tester       ○ WAITING           0 tok   $0.000000 │
+│ 🐛 Debugger     ○ WAITING           0 tok   $0.000000 │
+├────────────────────────────────────────────────────────────┤
+│ CURRENT                                                    │
+│                                                            │
+│ 💻 Developer                                        │
+│ Completed                                                │
+│                                                            │
+├────────────────────────────────────────────────────────────┤
+│ USAGE                                                      │
+│                                                            │
+│ Total tokens       13,305     API calls      5                   │
+│ Input tokens        5,927     Output           7,378       │
+│ Estimated cost $  0.004294                     │
+╰────────────────────────────────────────────────────────────╯
+
+Live dashboard • Ctrl+C still interrupts the team normally.
+
+╔══════════════════════════════════════════════════════════╗
+║              AI DEV TEAM — TOKEN USAGE                 ║
+╠══════════════╦════════════╦════════════╦═══════════════╣
+║ Agent        ║ Input      ║ Output     ║ Total         ║
+╠══════════════╬════════════╬════════════╬═══════════════╣
+║ Researcher   ║        961 ║        857 ║         1,818 ║
+║ Architect    ║        971 ║      1,635 ║         2,606 ║
+║ Developer    ║      2,952 ║      2,838 ║         5,790 ║ ◀
+║ Reviewer     ║      1,043 ║      2,048 ║         3,091 ║
+║ Security     ║          0 ║          0 ║             0 ║
+║ Tester       ║          0 ║          0 ║             0 ║
+║ Debugger     ║          0 ║          0 ║             0 ║
+╠══════════════╬════════════╬════════════╬═══════════════╣
+║ TOTAL        ║      5,927 ║      7,378 ║        13,305 ║
+╚══════════════╩════════════╩════════════╩═══════════════╝
+API calls: 5
+
+[21:12:47] Reviewer round 2...
+[2J[H╭────────────────────────────────────────────────────────────╮
+│ 🤖 AI DEV TEAM                         AI DEV TEAM 00:00:26 │
+├────────────────────────────────────────────────────────────┤
+│ AGENTS                                                     │
+│                                                            │
+│ 🔎 Researcher   ✓ DONE          1,818 tok   $0.000329 │
+│ 🏗️ Architect    ✓ DONE          2,606 tok   $0.001127 │
+│ 💻 Developer    ✓ DONE          5,790 tok   $0.002146 │
+│ 🔍 Reviewer     ● WORKING       3,091 tok   $0.000693 │
+│ 🔐 Security     ○ WAITING           0 tok   $0.000000 │
+│ 🧪 Tester       ○ WAITING           0 tok   $0.000000 │
+│ 🐛 Debugger     ○ WAITING           0 tok   $0.000000 │
+├────────────────────────────────────────────────────────────┤
+│ CURRENT                                                    │
+│                                                            │
+│ 🔍 Reviewer                                        │
+│ Generating response...                                   │
+│                                                            │
+├────────────────────────────────────────────────────────────┤
+│ USAGE                                                      │
+│                                                            │
+│ Total tokens       13,305     API calls      5                   │
+│ Input tokens        5,927     Output           7,378       │
+│ Estimated cost $  0.004294                     │
+╰────────────────────────────────────────────────────────────╯
+
+Live dashboard • Ctrl+C still interrupts the team normally.
+
+[Reviewer] openai/gpt-oss-20b is generating:
+
+
+[2J[H╭────────────────────────────────────────────────────────────╮
+│ 🤖 AI DEV TEAM                         AI DEV TEAM 00:00:28 │
+├────────────────────────────────────────────────────────────┤
+│ AGENTS                                                     │
+│                                                            │
+│ 🔎 Researcher   ✓ DONE          1,818 tok   $0.000329 │
+│ 🏗️ Architect    ✓ DONE          2,606 tok   $0.001127 │
+│ 💻 Developer    ✓ DONE          5,790 tok   $0.002146 │
+│ 🔍 Reviewer     ✓ DONE          6,327 tok   $0.001396 │
+│ 🔐 Security     ○ WAITING           0 tok   $0.000000 │
+│ 🧪 Tester       ○ WAITING           0 tok   $0.000000 │
+│ 🐛 Debugger     ○ WAITING           0 tok   $0.000000 │
+├────────────────────────────────────────────────────────────┤
+│ CURRENT                                                    │
+│                                                            │
+│ 🔍 Reviewer                                        │
+│ Completed                                                │
+│                                                            │
+├────────────────────────────────────────────────────────────┤
+│ USAGE                                                      │
+│                                                            │
+│ Total tokens       16,541     API calls      6                   │
+│ Input tokens        7,115     Output           9,426       │
+│ Estimated cost $  0.004998                     │
+╰────────────────────────────────────────────────────────────╯
+
+Live dashboard • Ctrl+C still interrupts the team normally.
+
+╔══════════════════════════════════════════════════════════╗
+║              AI DEV TEAM — TOKEN USAGE                 ║
+╠══════════════╦════════════╦════════════╦═══════════════╣
+║ Agent        ║ Input      ║ Output     ║ Total         ║
+╠══════════════╬════════════╬════════════╬═══════════════╣
+║ Researcher   ║        961 ║        857 ║         1,818 ║
+║ Architect    ║        971 ║      1,635 ║         2,606 ║
+║ Developer    ║      2,952 ║      2,838 ║         5,790 ║
+║ Reviewer     ║      2,231 ║      4,096 ║         6,327 ║ ◀
+║ Security     ║          0 ║          0 ║             0 ║
+║ Tester       ║          0 ║          0 ║             0 ║
+║ Debugger     ║          0 ║          0 ║             0 ║
+╠══════════════╬════════════╬════════════╬═══════════════╣
+║ TOTAL        ║      7,115 ║      9,426 ║        16,541 ║
+╚══════════════╩════════════╩════════════╩═══════════════╝
+API calls: 6
+
+[21:12:49] Reviewer requested changes. Sending back to Developer...
+[2J[H╭────────────────────────────────────────────────────────────╮
+│ 🤖 AI DEV TEAM                         AI DEV TEAM 00:00:28 │
+├────────────────────────────────────────────────────────────┤
+│ AGENTS                                                     │
+│                                                            │
+│ 🔎 Researcher   ✓ DONE          1,818 tok   $0.000329 │
+│ 🏗️ Architect    ✓ DONE          2,606 tok   $0.001127 │
+│ 💻 Developer    ● WORKING       5,790 tok   $0.002146 │
+│ 🔍 Reviewer     ✓ DONE          6,327 tok   $0.001396 │
+│ 🔐 Security     ○ WAITING           0 tok   $0.000000 │
+│ 🧪 Tester       ○ WAITING           0 tok   $0.000000 │
+│ 🐛 Debugger     ○ WAITING           0 tok   $0.000000 │
+├────────────────────────────────────────────────────────────┤
+│ CURRENT                                                    │
+│                                                            │
+│ 💻 Developer                                        │
+│ Generating response...                                   │
+│                                                            │
+├────────────────────────────────────────────────────────────┤
+│ USAGE                                                      │
+│                                                            │
+│ Total tokens       16,541     API calls      6                   │
+│ Input tokens        7,115     Output           9,426       │
+│ Estimated cost $  0.004998                     │
+╰────────────────────────────────────────────────────────────╯
+
+Live dashboard • Ctrl+C still interrupts the team normally.
+
+[Developer] openai/gpt-oss-120b is generating:
+### FILE: workspace/src/hello.py
+```python
+"""Simple hello world module."""
+
+__all__ = ["hello"]
+
+
+def hello() -> None:
+    """Print 'Hello, World!' to standard output."""
+    print("Hello, World!")
+
+
+if __name__ == "__main__":
+    # Allows the module to be executed directly:
+    #   python -m src.hello
+    hello()
+```
+
+[2J[H╭────────────────────────────────────────────────────────────╮
+│ 🤖 AI DEV TEAM                         AI DEV TEAM 00:00:45 │
+├────────────────────────────────────────────────────────────┤
+│ AGENTS                                                     │
+│                                                            │
+│ 🔎 Researcher   ✓ DONE          1,818 tok   $0.000329 │
+│ 🏗️ Architect    ✓ DONE          2,606 tok   $0.001127 │
+│ 💻 Developer    ✓ DONE          7,729 tok   $0.002739 │
+│ 🔍 Reviewer     ✓ DONE          6,327 tok   $0.001396 │
+│ 🔐 Security     ○ WAITING           0 tok   $0.000000 │
+│ 🧪 Tester       ○ WAITING           0 tok   $0.000000 │
+│ 🐛 Debugger     ○ WAITING           0 tok   $0.000000 │
+├────────────────────────────────────────────────────────────┤
+│ CURRENT                                                    │
+│                                                            │
+│ 💻 Developer                                        │
+│ Completed                                                │
+│                                                            │
+├────────────────────────────────────────────────────────────┤
+│ USAGE                                                      │
+│                                                            │
+│ Total tokens       18,480     API calls      7                   │
+│ Input tokens        8,381     Output          10,099       │
+│ Estimated cost $  0.005591                     │
+╰────────────────────────────────────────────────────────────╯
+
+Live dashboard • Ctrl+C still interrupts the team normally.
+
+╔══════════════════════════════════════════════════════════╗
+║              AI DEV TEAM — TOKEN USAGE                 ║
+╠══════════════╦════════════╦════════════╦═══════════════╣
+║ Agent        ║ Input      ║ Output     ║ Total         ║
+╠══════════════╬════════════╬════════════╬═══════════════╣
+║ Researcher   ║        961 ║        857 ║         1,818 ║
+║ Architect    ║        971 ║      1,635 ║         2,606 ║
+║ Developer    ║      4,218 ║      3,511 ║         7,729 ║ ◀
+║ Reviewer     ║      2,231 ║      4,096 ║         6,327 ║
+║ Security     ║          0 ║          0 ║             0 ║
+║ Tester       ║          0 ║          0 ║             0 ║
+║ Debugger     ║          0 ║          0 ║             0 ║
+╠══════════════╬════════════╬════════════╬═══════════════╣
+║ TOTAL        ║      8,381 ║     10,099 ║        18,480 ║
+╚══════════════╩════════════╩════════════╩═══════════════╝
+API calls: 7
+
+[21:13:06] Security review round 1...
+[2J[H╭────────────────────────────────────────────────────────────╮
+│ 🤖 AI DEV TEAM                         AI DEV TEAM 00:00:45 │
+├────────────────────────────────────────────────────────────┤
+│ AGENTS                                                     │
+│                                                            │
+│ 🔎 Researcher   ✓ DONE          1,818 tok   $0.000329 │
+│ 🏗️ Architect    ✓ DONE          2,606 tok   $0.001127 │
+│ 💻 Developer    ✓ DONE          7,729 tok   $0.002739 │
+│ 🔍 Reviewer     ✓ DONE          6,327 tok   $0.001396 │
+│ 🔐 Security     ● WORKING           0 tok   $0.000000 │
+│ 🧪 Tester       ○ WAITING           0 tok   $0.000000 │
+│ 🐛 Debugger     ○ WAITING           0 tok   $0.000000 │
+├────────────────────────────────────────────────────────────┤
+│ CURRENT                                                    │
+│                                                            │
+│ 🔐 Security                                        │
+│ Generating response...                                   │
+│                                                            │
+├────────────────────────────────────────────────────────────┤
+│ USAGE                                                      │
+│                                                            │
+│ Total tokens       18,480     API calls      7                   │
+│ Input tokens        8,381     Output          10,099       │
+│ Estimated cost $  0.005591                     │
+╰────────────────────────────────────────────────────────────╯
+
+Live dashboard • Ctrl+C still interrupts the team normally.
+
+[Security] openai/gpt-oss-20b is generating:
+
+
+[2J[H╭────────────────────────────────────────────────────────────╮
+│ 🤖 AI DEV TEAM                         AI DEV TEAM 00:00:47 │
+├────────────────────────────────────────────────────────────┤
+│ AGENTS                                                     │
+│                                                            │
+│ 🔎 Researcher   ✓ DONE          1,818 tok   $0.000329 │
+│ 🏗️ Architect    ✓ DONE          2,606 tok   $0.001127 │
+│ 💻 Developer    ✓ DONE          7,729 tok   $0.002739 │
+│ 🔍 Reviewer     ✓ DONE          6,327 tok   $0.001396 │
+│ 🔐 Security     ✓ DONE          3,277 tok   $0.000707 │
+│ 🧪 Tester       ○ WAITING           0 tok   $0.000000 │
+│ 🐛 Debugger     ○ WAITING           0 tok   $0.000000 │
+├────────────────────────────────────────────────────────────┤
+│ CURRENT                                                    │
+│                                                            │
+│ 🔐 Security                                        │
+│ Completed                                                │
+│                                                            │
+├────────────────────────────────────────────────────────────┤
+│ USAGE                                                      │
+│                                                            │
+│ Total tokens       21,757     API calls      8                   │
+│ Input tokens        9,610     Output          12,147       │
+│ Estimated cost $  0.006298                     │
+╰────────────────────────────────────────────────────────────╯
+
+Live dashboard • Ctrl+C still interrupts the team normally.
+
+╔══════════════════════════════════════════════════════════╗
+║              AI DEV TEAM — TOKEN USAGE                 ║
+╠══════════════╦════════════╦════════════╦═══════════════╣
+║ Agent        ║ Input      ║ Output     ║ Total         ║
+╠══════════════╬════════════╬════════════╬═══════════════╣
+║ Researcher   ║        961 ║        857 ║         1,818 ║
+║ Architect    ║        971 ║      1,635 ║         2,606 ║
+║ Developer    ║      4,218 ║      3,511 ║         7,729 ║
+║ Reviewer     ║      2,231 ║      4,096 ║         6,327 ║
+║ Security     ║      1,229 ║      2,048 ║         3,277 ║ ◀
+║ Tester       ║          0 ║          0 ║             0 ║
+║ Debugger     ║          0 ║          0 ║             0 ║
+╠══════════════╬════════════╬════════════╬═══════════════╣
+║ TOTAL        ║      9,610 ║     12,147 ║        21,757 ║
+╚══════════════╩════════════╩════════════╩═══════════════╝
+API calls: 8
+
+[21:13:08] Security review found issues. Sending back to Developer...
+[2J[H╭────────────────────────────────────────────────────────────╮
+│ 🤖 AI DEV TEAM                         AI DEV TEAM 00:00:47 │
+├────────────────────────────────────────────────────────────┤
+│ AGENTS                                                     │
+│                                                            │
+│ 🔎 Researcher   ✓ DONE          1,818 tok   $0.000329 │
+│ 🏗️ Architect    ✓ DONE          2,606 tok   $0.001127 │
+│ 💻 Developer    ● WORKING       7,729 tok   $0.002739 │
+│ 🔍 Reviewer     ✓ DONE          6,327 tok   $0.001396 │
+│ 🔐 Security     ✓ DONE          3,277 tok   $0.000707 │
+│ 🧪 Tester       ○ WAITING           0 tok   $0.000000 │
+│ 🐛 Debugger     ○ WAITING           0 tok   $0.000000 │
+├────────────────────────────────────────────────────────────┤
+│ CURRENT                                                    │
+│                                                            │
+│ 💻 Developer                                        │
+│ Generating response...                                   │
+│                                                            │
+├────────────────────────────────────────────────────────────┤
+│ USAGE                                                      │
+│                                                            │
+│ Total tokens       21,757     API calls      8                   │
+│ Input tokens        9,610     Output          12,147       │
+│ Estimated cost $  0.006298                     │
+╰────────────────────────────────────────────────────────────╯
+
+Live dashboard • Ctrl+C still interrupts the team normally.
+
+[Developer] openai/gpt-oss-120b is generating:
+### FILE: workspace/workspace/README.md
+```
+# Deprecated Workspace
+
+This `workspace/workspace` directory is a leftover from an earlier project layout.
+It is no longer used by the package and should be ignored. The active source code
+and tests reside in the top‑level `workspace` directory.
+
+You may safely delete this folder and its contents.
+```
+
+### FILE: workspace/workspace/src/hello.py
+```
+"""Deprecated hello module.
+
+This file is retained only to avoid import errors from legacy references.
+The active implementation lives in `../src/hello.py`.
+
+Attempting to use this module will raise an informative error.
+"""
+
+def _deprecated():
+    raise ImportError(
+        "The module `workspace.workspace.src.hello` is deprecated. "
+        "Please import `src.hello` instead."
+    )
+
+# Export a placeholder that raises an error on access
+class _DeprecatedCallable:
+    def __call__(self, *args, **kwargs):
+        _deprecated()
+
+hello = _DeprecatedCallable()
+```
+
+[2J[H╭────────────────────────────────────────────────────────────╮
+│ 🤖 AI DEV TEAM                         AI DEV TEAM 00:01:00 │
+├────────────────────────────────────────────────────────────┤
+│ AGENTS                                                     │
+│                                                            │
+│ 🔎 Researcher   ✓ DONE          1,818 tok   $0.000329 │
+│ 🏗️ Architect    ✓ DONE          2,606 tok   $0.001127 │
+│ 💻 Developer    ✓ DONE         10,028 tok   $0.003549 │
+│ 🔍 Reviewer     ✓ DONE          6,327 tok   $0.001396 │
+│ 🔐 Security     ✓ DONE          3,277 tok   $0.000707 │
+│ 🧪 Tester       ○ WAITING           0 tok   $0.000000 │
+│ 🐛 Debugger     ○ WAITING           0 tok   $0.000000 │
+├────────────────────────────────────────────────────────────┤
+│ CURRENT                                                    │
+│                                                            │
+│ 💻 Developer                                        │
+│ Completed                                                │
+│                                                            │
+├────────────────────────────────────────────────────────────┤
+│ USAGE                                                      │
+│                                                            │
+│ Total tokens       24,056     API calls      9                   │
+│ Input tokens       10,875     Output          13,181       │
+│ Estimated cost $  0.007108                     │
+╰────────────────────────────────────────────────────────────╯
+
+Live dashboard • Ctrl+C still interrupts the team normally.
+
+╔══════════════════════════════════════════════════════════╗
+║              AI DEV TEAM — TOKEN USAGE                 ║
+╠══════════════╦════════════╦════════════╦═══════════════╣
+║ Agent        ║ Input      ║ Output     ║ Total         ║
+╠══════════════╬════════════╬════════════╬═══════════════╣
+║ Researcher   ║        961 ║        857 ║         1,818 ║
+║ Architect    ║        971 ║      1,635 ║         2,606 ║
+║ Developer    ║      5,483 ║      4,545 ║        10,028 ║ ◀
+║ Reviewer     ║      2,231 ║      4,096 ║         6,327 ║
+║ Security     ║      1,229 ║      2,048 ║         3,277 ║
+║ Tester       ║          0 ║          0 ║             0 ║
+║ Debugger     ║          0 ║          0 ║             0 ║
+╠══════════════╬════════════╬════════════╬═══════════════╣
+║ TOTAL        ║     10,875 ║     13,181 ║        24,056 ║
+╚══════════════╩════════════╩════════════╩═══════════════╝
+API calls: 9
+
+[21:13:21] Tester is writing tests...
+[2J[H╭────────────────────────────────────────────────────────────╮
+│ 🤖 AI DEV TEAM                         AI DEV TEAM 00:01:00 │
+├────────────────────────────────────────────────────────────┤
+│ AGENTS                                                     │
+│                                                            │
+│ 🔎 Researcher   ✓ DONE          1,818 tok   $0.000329 │
+│ 🏗️ Architect    ✓ DONE          2,606 tok   $0.001127 │
+│ 💻 Developer    ✓ DONE         10,028 tok   $0.003549 │
+│ 🔍 Reviewer     ✓ DONE          6,327 tok   $0.001396 │
+│ 🔐 Security     ✓ DONE          3,277 tok   $0.000707 │
+│ 🧪 Tester       ● WORKING           0 tok   $0.000000 │
+│ 🐛 Debugger     ○ WAITING           0 tok   $0.000000 │
+├────────────────────────────────────────────────────────────┤
+│ CURRENT                                                    │
+│                                                            │
+│ 🧪 Tester                                        │
+│ Generating response...                                   │
+│                                                            │
+├────────────────────────────────────────────────────────────┤
+│ USAGE                                                      │
+│                                                            │
+│ Total tokens       24,056     API calls      9                   │
+│ Input tokens       10,875     Output          13,181       │
+│ Estimated cost $  0.007108                     │
+╰────────────────────────────────────────────────────────────╯
+
+Live dashboard • Ctrl+C still interrupts the team normally.
+
+[Tester] openai/gpt-oss-20b is generating:
+
+
+[2J[H╭────────────────────────────────────────────────────────────╮
+│ 🤖 AI DEV TEAM                         AI DEV TEAM 00:01:07 │
+├────────────────────────────────────────────────────────────┤
+│ AGENTS                                                     │
+│                                                            │
+│ 🔎 Researcher   ✓ DONE          1,818 tok   $0.000329 │
+│ 🏗️ Architect    ✓ DONE          2,606 tok   $0.001127 │
+│ 💻 Developer    ✓ DONE         10,028 tok   $0.003549 │
+│ 🔍 Reviewer     ✓ DONE          6,327 tok   $0.001396 │
+│ 🔐 Security     ✓ DONE          3,277 tok   $0.000707 │
+│ 🧪 Tester       ✓ DONE          3,519 tok   $0.000725 │
+│ 🐛 Debugger     ○ WAITING           0 tok   $0.000000 │
+├────────────────────────────────────────────────────────────┤
+│ CURRENT                                                    │
+│                                                            │
+│ 🧪 Tester                                        │
+│ Completed                                                │
+│                                                            │
+├────────────────────────────────────────────────────────────┤
+│ USAGE                                                      │
+│                                                            │
+│ Total tokens       27,575     API calls     10                   │
+│ Input tokens       12,346     Output          15,229       │
+│ Estimated cost $  0.007833                     │
+╰────────────────────────────────────────────────────────────╯
+
+Live dashboard • Ctrl+C still interrupts the team normally.
+
+╔══════════════════════════════════════════════════════════╗
+║              AI DEV TEAM — TOKEN USAGE                 ║
+╠══════════════╦════════════╦════════════╦═══════════════╣
+║ Agent        ║ Input      ║ Output     ║ Total         ║
+╠══════════════╬════════════╬════════════╬═══════════════╣
+║ Researcher   ║        961 ║        857 ║         1,818 ║
+║ Architect    ║        971 ║      1,635 ║         2,606 ║
+║ Developer    ║      5,483 ║      4,545 ║        10,028 ║
+║ Reviewer     ║      2,231 ║      4,096 ║         6,327 ║
+║ Security     ║      1,229 ║      2,048 ║         3,277 ║
+║ Tester       ║      1,471 ║      2,048 ║         3,519 ║ ◀
+║ Debugger     ║          0 ║          0 ║             0 ║
+╠══════════════╬════════════╬════════════╬═══════════════╣
+║ TOTAL        ║     12,346 ║     15,229 ║        27,575 ║
+╚══════════════╩════════════╩════════════╩═══════════════╝
+API calls: 10
+
+[21:13:28] Running pytest (attempt 1)...
+[21:13:28] All tests passed.
+
+╔══════════════════════════════════════════════════════════╗
+║              AI DEV TEAM — TOKEN USAGE                 ║
+╠══════════════╦════════════╦════════════╦═══════════════╣
+║ Agent        ║ Input      ║ Output     ║ Total         ║
+╠══════════════╬════════════╬════════════╬═══════════════╣
+║ Researcher   ║        961 ║        857 ║         1,818 ║
+║ Architect    ║        971 ║      1,635 ║         2,606 ║
+║ Developer    ║      5,483 ║      4,545 ║        10,028 ║
+║ Reviewer     ║      2,231 ║      4,096 ║         6,327 ║
+║ Security     ║      1,229 ║      2,048 ║         3,277 ║
+║ Tester       ║      1,471 ║      2,048 ║         3,519 ║
+║ Debugger     ║          0 ║          0 ║             0 ║
+╠══════════════╬════════════╬════════════╬═══════════════╣
+║ TOTAL        ║     12,346 ║     15,229 ║        27,575 ║
+╚══════════════╩════════════╩════════════╩═══════════════╝
+API calls: 10
+
+══════════════════════════════════════════════════════════
+                 RUN #3 COMPLETE
+══════════════════════════════════════════════════════════
+Total tokens: 27,575
+Estimated API cost: $0.007833
+API calls: 10
+History: workspace/run_history.json
+══════════════════════════════════════════════════════════
+
+[2J[H╭────────────────────────────────────────────────────────────╮
+│ 🤖 AI DEV TEAM                         AI DEV TEAM 00:01:07 │
+├────────────────────────────────────────────────────────────┤
+│ AGENTS                                                     │
+│                                                            │
+│ 🔎 Researcher   ✓ DONE          1,818 tok   $0.000329 │
+│ 🏗️ Architect    ✓ DONE          2,606 tok   $0.001127 │
+│ 💻 Developer    ✓ DONE         10,028 tok   $0.003549 │
+│ 🔍 Reviewer     ✓ DONE          6,327 tok   $0.001396 │
+│ 🔐 Security     ✓ DONE          3,277 tok   $0.000707 │
+│ 🧪 Tester       ✓ DONE          3,519 tok   $0.000725 │
+│ 🐛 Debugger     ○ WAITING           0 tok   $0.000000 │
+├────────────────────────────────────────────────────────────┤
+│ CURRENT                                                    │
+│                                                            │
+│ No agent currently generating.                            │
+│                                                            │
+├────────────────────────────────────────────────────────────┤
+│ USAGE                                                      │
+│                                                            │
+│ Total tokens       27,575     API calls     10                   │
+│ Input tokens       12,346     Output          15,229       │
+│ Estimated cost $  0.007833                     │
+╰────────────────────────────────────────────────────────────╯
+
+Live dashboard • Ctrl+C still interrupts the team normally.
+[2J[H╭────────────────────────────────────────────────────────────╮
+│ 🤖 AI DEV TEAM                         AI DEV TEAM 00:01:07 │
+├────────────────────────────────────────────────────────────┤
+│ AGENTS                                                     │
+│                                                            │
+│ 🔎 Researcher   ✓ DONE          1,818 tok   $0.000329 │
+│ 🏗️ Architect    ✓ DONE          2,606 tok   $0.001127 │
+│ 💻 Developer    ✓ DONE         10,028 tok   $0.003549 │
+│ 🔍 Reviewer     ✓ DONE          6,327 tok   $0.001396 │
+│ 🔐 Security     ✓ DONE          3,277 tok   $0.000707 │
+│ 🧪 Tester       ✓ DONE          3,519 tok   $0.000725 │
+│ 🐛 Debugger     ○ WAITING           0 tok   $0.000000 │
+├────────────────────────────────────────────────────────────┤
+│ CURRENT                                                    │
+│                                                            │
+│ No agent currently generating.                            │
+│                                                            │
+├────────────────────────────────────────────────────────────┤
+│ USAGE                                                      │
+│                                                            │
+│ Total tokens       27,575     API calls     10                   │
+│ Input tokens       12,346     Output          15,229       │
+│ Estimated cost $  0.007833                     │
+╰────────────────────────────────────────────────────────────╯
+
+Live dashboard • Ctrl+C still interrupts the team normally.
+[21:13:28] Done. See workspace/ for the code and workspace/run_log.json for the full transcript.

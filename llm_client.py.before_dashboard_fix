@@ -18,7 +18,6 @@ from pathlib import Path
 from openai import OpenAI
 
 from usage_tracker import tracker
-from team_events import events
 
 GROQ_BASE_URL = "https://api.groq.com/openai/v1"
 
@@ -189,11 +188,10 @@ def chat(
                 pieces = []
                 final_usage = None
 
-                # Send generation status to the dashboard.
-                events.emit(
-                    "TEAM_LOG",
-                    agent=agent_name,
-                    message=f"{candidate} is generating",
+                # Give the terminal a useful status line.
+                print(
+                    f"\n[{agent_name}] {candidate} is generating:",
+                    flush=True,
                 )
 
                 for chunk in stream:
@@ -226,6 +224,8 @@ def chat(
 
                     if content:
                         pieces.append(content)
+
+                print("\n", flush=True)
 
                 input_tokens = 0
                 output_tokens = 0
@@ -268,13 +268,10 @@ def chat(
                 )
 
                 if candidate != requested:
-                    events.emit(
-                        "TEAM_LOG",
-                        agent=agent_name,
-                        message=(
-                            f"Model '{requested}' unavailable; "
-                            f"using fallback '{candidate}'."
-                        ),
+                    print(
+                        f"[LLM] Model '{requested}' unavailable; "
+                        f"using fallback '{candidate}'.",
+                        flush=True,
                     )
 
                 return "".join(pieces)
@@ -297,13 +294,11 @@ def chat(
 
                 delay = RETRY_BASE_SECONDS * (2**attempt)
 
-                events.emit(
-                    "TEAM_LOG",
-                    agent=agent_name,
-                    message=(
-                        f"Request failed ({type(exc).__name__}); "
-                        f"retrying in {delay:g}s..."
-                    ),
+                print(
+                    f"[LLM] Request failed "
+                    f"({type(exc).__name__}); "
+                    f"retrying in {delay:g}s...",
+                    flush=True,
                 )
 
                 time.sleep(delay)

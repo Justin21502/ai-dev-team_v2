@@ -1,1 +1,1 @@
-# This file makes `src` a package.
+"""Top-level package for the hello world demo."""
