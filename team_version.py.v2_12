@@ -1,0 +1,24 @@
+"""Version helpers for AI Dev Team."""
+
+from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parent
+VERSION_FILE = ROOT / "VERSION"
+
+
+def get_version() -> str:
+    if not VERSION_FILE.exists():
+        return "unknown"
+
+    value = VERSION_FILE.read_text(
+        encoding="utf-8"
+    ).strip()
+
+    return value or "unknown"
+
+
+def show_version() -> None:
+    print(
+        f"AI Dev Team v{get_version()}"
+    )

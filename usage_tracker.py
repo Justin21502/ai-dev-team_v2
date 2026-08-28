@@ -7,6 +7,8 @@ from collections import defaultdict
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
+
+from team_config import get_config
 from threading import Lock
 
 
@@ -117,11 +119,15 @@ class UsageTracker:
 
     def save_history(
         self,
-        path: str = "workspace/run_history.json",
+        path: str | Path | None = None,
         metadata: dict | None = None,
     ):
         """Append this run's usage and build metadata to persistent history."""
-        history_path = Path(path)
+        history_path = (
+            Path(path)
+            if path is not None
+            else get_config().run_history_path
+        )
         history_path.parent.mkdir(parents=True, exist_ok=True)
 
         if history_path.exists():

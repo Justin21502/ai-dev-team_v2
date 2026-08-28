@@ -1,0 +1,83 @@
+#!/usr/bin/env bash
+
+set -e
+
+ROOT="$(
+  cd "$(dirname "${BASH_SOURCE[0]}")"
+  pwd
+)"
+
+cd "$ROOT"
+
+COMMAND="${1:-}"
+
+case "$COMMAND" in
+  run)
+    shift
+    exec python3 orchestrator.py "$@"
+    ;;
+
+  status)
+    shift
+    exec python3 team_history.py "$@"
+    ;;
+
+  history)
+    shift
+    exec python3 team_history.py "$@"
+    ;;
+
+  replay)
+    shift
+    exec python3 team_replay.py "$@"
+    ;;
+
+  doctor)
+    shift
+    exec python3 team_doctor.py "$@"
+    ;;
+
+  config)
+    shift
+    exec python3 -c       'from team_config_cli import show_config; show_config()'
+    ;;
+
+  models)
+    shift
+    exec python3 -c       'from team_config_cli import show_models; show_models()'
+    ;;
+
+  version|--version|-V)
+    shift
+    exec python3 -c       'from team_version import show_version; show_version()'
+    ;;
+
+  "")
+    python3 -c       'from team_version import show_version; show_version()'
+    echo
+    echo "Usage:"
+    echo "  team run <task>"
+    echo "  team status"
+    echo "  team history [run_number]"
+    echo "  team replay <run_number>"
+    echo "  team doctor"
+    echo "  team config"
+    echo "  team models"
+    echo "  team version"
+    ;;
+
+  *)
+    echo "Unknown command: $COMMAND" >&2
+    echo >&2
+    echo "Usage:" >&2
+    echo "  team run <task>" >&2
+    echo "  team status" >&2
+    echo "  team history [run_number]" >&2
+    echo "  team replay <run_number>" >&2
+    echo "  team doctor" >&2
+    echo "  team config" >&2
+    echo "  team models" >&2
+    echo "  team version" >&2
+    exit 2
+    ;;
+esac

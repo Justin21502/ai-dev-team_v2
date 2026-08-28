@@ -4,11 +4,11 @@ import json
 import os
 import sys
 from datetime import datetime
-from pathlib import Path
+from team_config import get_config
 
 
-ROOT = Path(__file__).resolve().parent
-HISTORY_PATH = ROOT / "workspace" / "run_history.json"
+CONFIG = get_config()
+HISTORY_PATH = CONFIG.run_history_path
 
 
 def _color(text: str, code: str) -> str:

@@ -4,12 +4,12 @@ import json
 import os
 import re
 import sys
-from pathlib import Path
+from team_config import get_config
 
 
-ROOT = Path(__file__).resolve().parent
-WORKSPACE = ROOT / "workspace"
-RUNS_DIR = WORKSPACE / ".team" / "runs"
+CONFIG = get_config()
+WORKSPACE = CONFIG.workspace_dir
+RUNS_DIR = CONFIG.replay_dir
 
 
 def _color(text: str, code: str) -> str:

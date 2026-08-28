@@ -1457,81 +1457,41 @@ def _apply_agent_files(
     return list(dict.fromkeys(existing + written))
 
 
-def _clean_workspace(
-    workspace_dir: str | Path,
-) -> None:
-    """Safely clear generated project files from a workspace."""
-    workspace = Path(
-        workspace_dir
-    ).expanduser().resolve()
+def _clean_workspace(workspace_dir: str):
+    """Remove the previous generated project before starting a new run."""
+    workspace = Path(workspace_dir).resolve()
+    project_root = Path(__file__).resolve().parent
 
-    config = get_config()
-
-    project_root = config.project_root.resolve()
-    runtime_root = config.runtime_root.resolve()
-    home = Path.home().resolve()
-    cwd = Path.cwd().resolve()
-
-    filesystem_root = Path(
-        workspace.anchor
-    ).resolve()
-
-    protected = {
-        filesystem_root,
-        home,
-        project_root,
-        runtime_root,
-        cwd,
-    }
-
-    # Never clean a protected directory directly.
-    if workspace in protected:
+    # Never allow the generated-project cleanup to delete the AI Dev Team
+    # itself. The workspace must be a child directory of the team project.
+    if workspace == project_root:
         raise RuntimeError(
-            "Refusing to clean dangerous workspace "
-            f"path: {workspace}"
+            "Refusing to clean the AI Dev Team root directory. "
+            "Generated workspaces must be inside the team project."
         )
 
-    # Also refuse any workspace that is an ancestor of a protected
-    # location. Cleaning such a directory could remove the AI Dev Team,
-    # its runtime data, the user's home, or the current working tree.
-    for protected_path in protected:
-        try:
-            protected_path.relative_to(workspace)
-        except ValueError:
-            continue
-
+    try:
+        workspace.relative_to(project_root)
+    except ValueError:
         raise RuntimeError(
-            "Refusing to clean workspace because it "
-            "contains a protected path: "
-            f"{workspace}"
+            f"Refusing to clean workspace outside the AI Dev Team: {workspace}"
         )
 
     if workspace.exists():
-        if not workspace.is_dir():
-            raise RuntimeError(
-                "Workspace path exists but is not a directory: "
-                f"{workspace}"
-            )
-
         for child in workspace.iterdir():
-            # Persistent AI Dev Team state survives project cleanup.
-            if child.name in {
-                "run_history.json",
-                ".team",
-            }:
+            # Persistent AI Dev Team state must survive project cleanup.
+            # run_history.json stores lightweight summaries while .team/
+            # stores richer per-run artifacts such as replay logs.
+            if child.name in {"run_history.json", ".team"}:
                 continue
 
             if child.is_dir():
                 import shutil
-
                 shutil.rmtree(child)
             else:
                 child.unlink()
 
-    workspace.mkdir(
-        parents=True,
-        exist_ok=True,
-    )
+    workspace.mkdir(parents=True, exist_ok=True)
 
 
 def _build_validation_summary(
@@ -1641,17 +1601,7 @@ def _build_validation_summary(
     }
 
 
-def run_team(
-    task: str,
-    workspace_dir: str | Path | None = None,
-):
-    if workspace_dir is None:
-        workspace_dir = get_config().workspace_dir
-
-    workspace_dir = str(
-        Path(workspace_dir).resolve()
-    )
-
+def run_team(task: str, workspace_dir: str = "workspace"):
     # Each team invocation gets its own token accounting.
     tracker.reset()
 

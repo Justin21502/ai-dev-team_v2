@@ -20,26 +20,7 @@ from pathlib import Path
 
 
 PROJECT_ROOT = Path(__file__).resolve().parent
-
-
-def _default_runtime_root() -> Path:
-    """Resolve the writable AI Dev Team runtime directory."""
-    configured = os.environ.get("AI_TEAM_HOME")
-
-    if configured:
-        return Path(configured).expanduser().resolve()
-
-    # Running directly from a source checkout keeps the existing
-    # repository-local workspace/history behavior.
-    if (PROJECT_ROOT / "team").exists():
-        return PROJECT_ROOT
-
-    # Installed packages must never write into site-packages.
-    return (Path.home() / ".ai-dev-team").resolve()
-
-
-RUNTIME_ROOT = _default_runtime_root()
-ENV_FILE = RUNTIME_ROOT / ".env"
+ENV_FILE = PROJECT_ROOT / ".env"
 
 
 DEFAULT_PRIMARY_MODEL = "openai/gpt-oss-120b"
@@ -178,14 +159,7 @@ class TeamConfig:
     """Resolved runtime configuration."""
 
     project_root: Path
-    runtime_root: Path
     env_file: Path
-
-    workspace_dir: Path
-    team_state_dir: Path
-    run_history_path: Path
-    run_log_path: Path
-    replay_dir: Path
 
     groq_base_url: str
     groq_api_key: str | None
@@ -354,23 +328,9 @@ def get_config() -> TeamConfig:
             max_output_tokens,
         )
 
-    workspace_dir = RUNTIME_ROOT / "workspace"
-    team_state_dir = workspace_dir / ".team"
-    replay_dir = team_state_dir / "runs"
-
     return TeamConfig(
         project_root=PROJECT_ROOT,
-        runtime_root=RUNTIME_ROOT,
         env_file=ENV_FILE,
-        workspace_dir=workspace_dir,
-        team_state_dir=team_state_dir,
-        run_history_path=(
-            workspace_dir / "run_history.json"
-        ),
-        run_log_path=(
-            workspace_dir / "run_log.json"
-        ),
-        replay_dir=replay_dir,
         groq_base_url=(
             _env(
                 "GROQ_BASE_URL",
