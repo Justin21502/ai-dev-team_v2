@@ -11,7 +11,6 @@ GitHub Codespace without a framework or paid orchestration service.
 from __future__ import annotations
 
 import json
-import os
 import re
 import subprocess
 import sys
@@ -33,15 +32,18 @@ from context_manager import (
     discover_project_files,
 )
 from model_router import resolve_role_model
+from team_config import get_config
 from usage_tracker import tracker
 from team_dashboard import dashboard
 from team_events import events
 from web_search import search_many
 
-MAX_REVIEW_ITERATIONS = int(os.environ.get("MAX_REVIEW_ITERATIONS", "2"))
-MAX_SECURITY_ITERATIONS = int(os.environ.get("MAX_SECURITY_ITERATIONS", "1"))
-MAX_TEST_ITERATIONS = int(os.environ.get("MAX_TEST_ITERATIONS", "3"))
-ENABLE_RESEARCH = os.environ.get("ENABLE_RESEARCH", "true").lower() != "false"
+CONFIG = get_config()
+
+MAX_REVIEW_ITERATIONS = CONFIG.max_review_iterations
+MAX_SECURITY_ITERATIONS = CONFIG.max_security_iterations
+MAX_TEST_ITERATIONS = CONFIG.max_test_iterations
+ENABLE_RESEARCH = CONFIG.enable_research
 
 # Role defaults are centralized in model_router.py.
 # These compatibility names keep the existing orchestration and run logs

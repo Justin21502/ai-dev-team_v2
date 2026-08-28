@@ -10,7 +10,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 
-from llm_client import FAST_MODEL, PRIMARY_MODEL
+from team_config import get_config
 
 
 ROLE_DEFAULT_TIERS = {
@@ -33,6 +33,11 @@ ROLE_MODEL_ENV = {
     "Tester": "AI_TEAM_TESTER_MODEL",
     "Debugger": "AI_TEAM_DEBUGGER_MODEL",
 }
+
+
+CONFIG = get_config()
+PRIMARY_MODEL = CONFIG.primary_model
+FAST_MODEL = CONFIG.fast_model
 
 
 @dataclass(frozen=True)

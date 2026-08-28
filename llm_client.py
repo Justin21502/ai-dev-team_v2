@@ -13,97 +13,49 @@ from __future__ import annotations
 import os
 import sys
 import time
-from pathlib import Path
 
 from openai import OpenAI
 
+from team_config import get_config
 from usage_tracker import tracker
 from team_events import events
 
-GROQ_BASE_URL = "https://api.groq.com/openai/v1"
+config = get_config()
 
-PRIMARY_MODEL = os.environ.get(
-    "AI_TEAM_PRIMARY_MODEL",
-    "openai/gpt-oss-120b",
-)
-
-FAST_MODEL = os.environ.get(
-    "AI_TEAM_FAST_MODEL",
-    "openai/gpt-oss-20b",
-)
-
-DEFAULT_MODEL = os.environ.get(
-    "AI_TEAM_MODEL",
-    PRIMARY_MODEL,
-)
-
-FALLBACK_MODEL = os.environ.get(
-    "AI_TEAM_FALLBACK_MODEL",
-    FAST_MODEL,
-)
-
-MAX_RETRIES = int(
-    os.environ.get("AI_TEAM_MAX_RETRIES", "2")
-)
-
-RETRY_BASE_SECONDS = float(
-    os.environ.get("AI_TEAM_RETRY_BASE_SECONDS", "2")
-)
+GROQ_BASE_URL = config.groq_base_url
+PRIMARY_MODEL = config.primary_model
+FAST_MODEL = config.fast_model
+DEFAULT_MODEL = config.default_model
+FALLBACK_MODEL = config.fallback_model
+MAX_RETRIES = config.max_retries
+RETRY_BASE_SECONDS = config.retry_base_seconds
 
 _client: OpenAI | None = None
-_env_loaded = False
-
-
-def _load_dotenv_file() -> None:
-    global _env_loaded
-
-    if _env_loaded:
-        return
-
-    _env_loaded = True
-
-    root = Path(__file__).resolve().parent
-    env_file = root / ".env"
-
-    if not env_file.exists():
-        return
-
-    for raw in env_file.read_text().splitlines():
-        line = raw.strip()
-
-        if not line or line.startswith("#") or "=" not in line:
-            continue
-
-        key, value = line.split("=", 1)
-
-        key = key.strip()
-        value = value.strip().strip('"').strip("'")
-
-        os.environ.setdefault(key, value)
 
 
 def get_client() -> OpenAI:
     global _client
 
-    _load_dotenv_file()
-
     if _client is not None:
         return _client
 
-    token = os.environ.get("GROQ_API_KEY")
+    config = get_config()
+    token = config.groq_api_key
 
     if not token:
         raise RuntimeError(
-            "No GROQ_API_KEY found. Put it in .env or configure it as a "
-            "GitHub Codespaces secret."
+            "No GROQ_API_KEY found. Put it in the "
+            "project .env or configure it in the "
+            "process environment."
         )
 
     _client = OpenAI(
-        base_url=GROQ_BASE_URL,
+        base_url=config.groq_base_url,
         api_key=token,
     )
 
     return _client
+
 
 
 def _classify_api_failure(
@@ -194,15 +146,17 @@ def _request(client, messages, model, temperature):
         },
     }
 
-    if os.environ.get("AI_TEAM_REASONING_EFFORT"):
-        kwargs["reasoning_effort"] = os.environ[
-            "AI_TEAM_REASONING_EFFORT"
-        ]
+    config = get_config()
 
-    if os.environ.get("AI_TEAM_MAX_OUTPUT_TOKENS"):
-        kwargs["max_completion_tokens"] = int(
-            os.environ["AI_TEAM_MAX_OUTPUT_TOKENS"]
-        )
+    if config.reasoning_effort:
+        kwargs[
+            "reasoning_effort"
+        ] = config.reasoning_effort
+
+    if config.max_output_tokens is not None:
+        kwargs[
+            "max_completion_tokens"
+        ] = config.max_output_tokens
 
     return client.chat.completions.create(**kwargs)
 

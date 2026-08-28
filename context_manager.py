@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
+from team_config import get_config
 
-DEFAULT_MAX_CHARS = int(
-    os.environ.get("AI_TEAM_CONTEXT_MAX_CHARS", "30000")
-)
+
+CONFIG = get_config()
+DEFAULT_MAX_CHARS = CONFIG.context_max_chars
 
 IGNORED_DIRS = {
     ".git",
