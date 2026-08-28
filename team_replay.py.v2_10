@@ -1,0 +1,693 @@
+from __future__ import annotations
+
+import json
+import os
+import re
+import sys
+from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parent
+WORKSPACE = ROOT / "workspace"
+RUNS_DIR = WORKSPACE / ".team" / "runs"
+
+
+def _color(text: str, code: str) -> str:
+    if not sys.stdout.isatty() or os.environ.get("NO_COLOR"):
+        return text
+    return f"\033[{code}m{text}\033[0m"
+
+
+def _load_run(run_number: int) -> dict:
+    path = RUNS_DIR / f"{run_number}.json"
+
+    if not path.exists():
+        print(
+            f"No replay data saved for run #{run_number}.",
+            file=sys.stderr,
+        )
+        raise SystemExit(1)
+
+    try:
+        data = json.loads(path.read_text())
+    except (OSError, json.JSONDecodeError) as exc:
+        print(
+            f"Could not read replay data for run #{run_number}: {exc}",
+            file=sys.stderr,
+        )
+        raise SystemExit(1)
+
+    if not isinstance(data, dict):
+        print(
+            f"Replay data for run #{run_number} is invalid.",
+            file=sys.stderr,
+        )
+        raise SystemExit(1)
+
+    return data
+
+
+def _first_line(value: str | None) -> str:
+    if not value:
+        return ""
+
+    for line in str(value).splitlines():
+        line = line.strip()
+        if line:
+            return line
+
+    return ""
+
+
+def _extract_file_count(step: dict) -> int:
+    files = step.get("files")
+
+    if isinstance(files, list):
+        return len(files)
+
+    if isinstance(files, dict):
+        return len(files)
+
+    return 0
+
+
+def _is_test_path(value: str) -> bool:
+    """Return True when a saved path looks like a test-suite file."""
+    path = str(value).replace("\\", "/")
+    name = path.rsplit("/", 1)[-1]
+
+    return (
+        "/tests/" in f"/{path}"
+        or name.startswith("test_")
+        or name.endswith("_test.py")
+    )
+
+
+def _changed_application_files(step: dict) -> list[str]:
+    """Return application files changed during this specific step."""
+    changed = step.get("files_changed")
+
+    if not isinstance(changed, list):
+        return []
+
+    return [
+        str(path)
+        for path in changed
+        if not _is_test_path(str(path))
+    ]
+
+
+def _application_file_count(step: dict) -> int:
+    """Count application files while excluding test files."""
+    files = step.get("files")
+
+    if isinstance(files, dict):
+        values = list(files.keys())
+    elif isinstance(files, list):
+        values = files
+    else:
+        return 0
+
+    return sum(
+        1
+        for value in values
+        if not _is_test_path(str(value))
+    )
+
+
+def _pytest_summary(step: dict, run: dict) -> str:
+    # Prefer the actual pytest output saved with this step. Legacy
+    # run-level summaries may contain only pytest's progress line.
+    stdout = str(step.get("stdout") or "")
+    stderr = str(step.get("stderr") or "")
+
+    lines = [
+        line.strip()
+        for line in (stdout + "\n" + stderr).splitlines()
+        if line.strip()
+    ]
+
+    summary_terms = (
+        " passed",
+        " failed",
+        " error",
+        " errors",
+        " skipped",
+        " xfailed",
+        " xpassed",
+    )
+
+    for line in reversed(lines):
+        lowered = " " + line.lower()
+
+        if any(term in lowered for term in summary_terms):
+            return line
+
+    # Quiet pytest can emit only dots plus [100%].
+    progress = ""
+
+    for line in lines:
+        if "%" not in line:
+            continue
+
+        before_percent = line.split("[", 1)[0]
+        progress += "".join(
+            char for char in before_percent
+            if char in ".FEsxX"
+        )
+
+    if progress:
+        parts = []
+
+        counts = (
+            (progress.count("."), "passed"),
+            (progress.count("F"), "failed"),
+            (progress.count("E"), "error"),
+            (progress.count("s"), "skipped"),
+            (progress.count("x"), "xfailed"),
+            (progress.count("X"), "xpassed"),
+        )
+
+        for count, label in counts:
+            if not count:
+                continue
+
+            if label == "error" and count != 1:
+                label = "errors"
+
+            parts.append(f"{count} {label}")
+
+        if parts:
+            return ", ".join(parts)
+
+    if lines:
+        return lines[-1]
+
+    # Fall back to run-level metadata only when the pytest step itself
+    # contains no usable output.
+    if run.get("pytest_summary"):
+        return str(run["pytest_summary"])
+
+    return "pytest completed"
+
+
+def _decision_result(
+    step: dict,
+    *,
+    approved_text: str,
+    changes_text: str,
+) -> str | None:
+    """Render a structured Reviewer/Security decision when available."""
+    decision = step.get("decision")
+
+    if not isinstance(decision, dict):
+        return None
+
+    verdict = str(
+        decision.get("verdict") or ""
+    ).strip().upper()
+
+    summary = str(
+        decision.get("summary") or ""
+    ).strip()
+
+    issues = decision.get("issues")
+
+    if not isinstance(issues, list):
+        issues = []
+
+    if verdict == "APPROVED":
+        if summary:
+            return f"{approved_text} — {summary}"
+
+        return approved_text
+
+    if verdict in {
+        "CHANGES_REQUESTED",
+        "CHANGES_NEEDED",
+    }:
+        issue_count = len(issues)
+
+        if issue_count:
+            noun = "issue" if issue_count == 1 else "issues"
+            base = f"{changes_text} — {issue_count} {noun}"
+        else:
+            base = changes_text
+
+        if summary:
+            return f"{base}: {summary}"
+
+        return base
+
+    return None
+
+
+def _review_result(step: dict) -> str:
+    structured = _decision_result(
+        step,
+        approved_text="Approved",
+        changes_text="Changes requested",
+    )
+
+    if structured:
+        return structured
+
+    output = step.get("output")
+    first = _first_line(output)
+
+    if not first:
+        return "Review completed"
+
+    if first.upper().startswith("APPROVED"):
+        return "Approved"
+
+    return "Changes requested"
+
+
+def _security_result(step: dict) -> str:
+    structured = _decision_result(
+        step,
+        approved_text="Approved",
+        changes_text="Issues found",
+    )
+
+    if structured:
+        return structured
+
+    output = step.get("output")
+    first = _first_line(output)
+
+    if not first:
+        return "Security review completed"
+
+    if first.upper().startswith("APPROVED"):
+        return "Approved"
+
+    return "Issues found"
+
+
+def _step_description(
+    step: dict,
+    run: dict,
+    next_step: dict | None = None,
+) -> tuple[str, str]:
+    agent = str(step.get("agent") or "Unknown")
+    action = str(step.get("action") or "")
+    round_number = step.get("round")
+    attempt = step.get("attempt")
+
+    if action == "pytest":
+        passed = bool(step.get("passed"))
+        title = "Pytest"
+
+        if attempt is not None:
+            title += f" — Attempt {attempt}"
+
+        status = (
+            _color("PASSED", "1;92")
+            if passed
+            else _color("FAILED", "1;91")
+        )
+
+        return (
+            title,
+            f"{status} — {_pytest_summary(step, run)}",
+        )
+
+    if agent == "Researcher":
+        return "Researcher", "Research completed"
+
+    if agent == "Architect":
+        return "Architect", "Architecture completed"
+
+    if agent == "Reviewer":
+        title = "Reviewer"
+
+        if round_number is not None:
+            title += f" — Round {round_number}"
+
+        output = step.get("output")
+
+        # Older runs can contain an empty Reviewer output. The
+        # orchestrator's next action still tells us what happened:
+        # if work went back to Developer, the review was not approved.
+        if not _first_line(output):
+            if (
+                isinstance(next_step, dict)
+                and next_step.get("agent") == "Developer"
+            ):
+                return title, "Changes requested"
+
+            return title, "Review completed"
+
+        return title, _review_result(step)
+
+    if agent == "Security":
+        title = "Security"
+
+        if round_number is not None:
+            title += f" — Round {round_number}"
+
+        return title, _security_result(step)
+
+    if agent in {"Developer", "Debugger"}:
+        title = agent
+
+        if round_number is not None:
+            title += f" — Round {round_number}"
+
+        changed = _changed_application_files(step)
+
+        if changed:
+            count = len(changed)
+            noun = "file" if count == 1 else "files"
+            return title, f"{count} application {noun} changed"
+
+        # Legacy runs did not store files_changed.
+        count = _application_file_count(step)
+
+        if count:
+            noun = "file" if count == 1 else "files"
+            return title, f"{count} application {noun} available"
+
+        return title, "Application updated"
+
+    if agent == "Tester":
+        count = _extract_file_count(step)
+
+        if count:
+            noun = "file" if count == 1 else "files"
+            return "Tester", f"{count} test {noun} written"
+
+        final_count = int(run.get("test_files") or 0)
+
+        if final_count:
+            noun = "file" if final_count == 1 else "files"
+            return "Tester", f"{final_count} test {noun} present"
+
+        return "Tester", "Test stage completed"
+
+    title = agent
+
+    if round_number is not None:
+        title += f" — Round {round_number}"
+
+    return title, _first_line(step.get("output")) or "Completed"
+
+
+def _show_validation_summary(
+    run: dict,
+) -> None:
+    """Render saved validation observability for newer runs."""
+    validation = (
+        run.get("validation")
+        or run.get("validation_summary")
+        or {}
+    )
+
+    if not validation:
+        return
+
+    print(_color("VALIDATION", "1;37"))
+
+    python_status = str(
+        validation.get(
+            "python_validation",
+            "NOT_RUN",
+        )
+    ).upper()
+
+    ruff_status = str(
+        validation.get(
+            "ruff",
+            "NOT_RUN",
+        )
+    ).upper()
+
+    pytest_passed = bool(
+        validation.get(
+            "pytest_passed",
+            False,
+        )
+    )
+
+    pytest_status = (
+        "PASSED"
+        if pytest_passed
+        else "NOT VERIFIED"
+    )
+
+    print(
+        f"  Python:       {python_status}"
+    )
+    print(
+        f"  Ruff:         {ruff_status}"
+    )
+    print(
+        f"  Pytest:       {pytest_status}"
+    )
+    print(
+        "  Executions:   "
+        f"{validation.get('pytest_executions', 0)}"
+    )
+    print(
+        "  Full runs:    "
+        f"{validation.get('pytest_full_runs', 0)}"
+    )
+    print(
+        "  Targeted:     "
+        f"{validation.get('pytest_targeted_runs', 0)}"
+    )
+
+    categories = validation.get(
+        "pytest_failure_categories",
+        [],
+    )
+
+    if categories:
+        print(
+            "  Failures:     "
+            + " -> ".join(
+                str(item)
+                for item in categories
+            )
+        )
+
+    repair_agents = validation.get(
+        "repair_agents",
+        [],
+    )
+
+    if repair_agents:
+        print(
+            "  Repairs:      "
+            + " -> ".join(
+                str(item)
+                for item in repair_agents
+            )
+        )
+
+    print()
+
+
+def _show_context_trace(run: dict) -> None:
+    """Render saved context observability for newer runs."""
+    reports = run.get("context_reports") or []
+    summary = run.get("context_summary") or {}
+
+    if not reports and not summary:
+        return
+
+    print(_color("CONTEXT", "1;37"))
+
+    if summary:
+        calls = summary.get(
+            "calls",
+            len(reports),
+        )
+        peak = summary.get(
+            "peak_budget_percent",
+            0.0,
+        )
+        visible = summary.get(
+            "total_visible_files",
+            0,
+        )
+        omitted = summary.get(
+            "total_omitted_files",
+            0,
+        )
+
+        print(f"  Calls:        {calls}")
+        print(f"  Peak budget:  {float(peak):.1f}%")
+        print(f"  Visible:      {visible} file-views")
+        print(f"  Omitted:      {omitted} file-views")
+
+    if reports:
+        print()
+        print("Context trace:")
+
+        for index, report in enumerate(
+            reports,
+            start=1,
+        ):
+            if not isinstance(report, dict):
+                continue
+
+            role = str(
+                report.get("role")
+                or "unknown"
+            ).capitalize()
+
+            purpose = str(
+                report.get("purpose")
+                or role.lower()
+            )
+
+            visible_count = int(
+                report.get("visible_count", 0)
+            )
+            selected_count = int(
+                report.get("selected_count", 0)
+            )
+            percent = float(
+                report.get(
+                    "budget_percent",
+                    0.0,
+                )
+            )
+
+            sequence = report.get(
+                "sequence",
+                index,
+            )
+
+            print(
+                f"  [{int(sequence):02d}] "
+                f"{role} — {purpose}"
+            )
+            print(
+                f"       {visible_count}/{selected_count} "
+                f"files visible — {percent:.1f}% budget"
+            )
+
+            focus_files = (
+                report.get(
+                    "focused_visible_files"
+                )
+                or []
+            )
+
+            if focus_files:
+                print(
+                    "       Focus: "
+                    + ", ".join(
+                        str(value)
+                        for value in focus_files
+                    )
+                )
+
+    print()
+
+
+def show_replay(run_number: int) -> None:
+    run = _load_run(run_number)
+    steps = run.get("steps") or []
+
+    print()
+    print(
+        _color(
+            f"AI DEV TEAM — REPLAY RUN #{run_number}",
+            "1;96",
+        )
+    )
+    print()
+
+    task = run.get("task")
+
+    if task:
+        print(f"Task: {task}")
+        print()
+
+    if not steps:
+        print("No execution steps were saved for this run.")
+        print()
+        return
+
+    for index, step in enumerate(steps, start=1):
+        if not isinstance(step, dict):
+            continue
+
+        next_step = (
+            steps[index]
+            if index < len(steps)
+            and isinstance(steps[index], dict)
+            else None
+        )
+
+        title, description = _step_description(
+            step,
+            run,
+            next_step,
+        )
+
+        print(
+            _color(
+                f"[{index:02d}] {title}",
+                "1;37",
+            )
+        )
+        print(f"     {description}")
+        print()
+
+    _show_validation_summary(run)
+    _show_context_trace(run)
+
+    result = str(run.get("status") or run.get("result") or "unknown").upper()
+
+    if result == "PASSED":
+        result = _color(result, "1;92")
+    elif result in {"FAILED", "TESTS_FAILED"}:
+        result = _color(result, "1;91")
+
+    print(f"RESULT: {result}")
+
+    pytest_summary = run.get("pytest_summary")
+
+    if pytest_summary:
+        print(f"TESTS:  {pytest_summary}")
+
+    print()
+
+
+def main() -> None:
+    args = sys.argv[1:]
+
+    if len(args) != 1:
+        print(
+            "Usage: team replay <run_number>",
+            file=sys.stderr,
+        )
+        raise SystemExit(1)
+
+    try:
+        run_number = int(args[0])
+    except ValueError:
+        print(
+            f"Invalid run number: {args[0]}",
+            file=sys.stderr,
+        )
+        raise SystemExit(1)
+
+    if run_number < 1:
+        print(
+            "Run number must be greater than zero.",
+            file=sys.stderr,
+        )
+        raise SystemExit(1)
+
+    show_replay(run_number)
+
+
+if __name__ == "__main__":
+    main()

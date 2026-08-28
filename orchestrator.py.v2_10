@@ -1,0 +1,2607 @@
+"""Manager for the AI Dev Team.
+
+Workflow:
+  Researcher -> Architect -> Developer -> Review -> Security -> Tester
+             -> real pytest -> Developer/Debugger fixes
+
+The team is deliberately simple and transparent so it works well in a
+GitHub Codespace without a framework or paid orchestration service.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import re
+import subprocess
+import sys
+from datetime import datetime, timezone
+from pathlib import Path
+
+from agents import (
+    make_architect,
+    make_debugger,
+    make_developer,
+    make_researcher,
+    make_reviewer,
+    make_security,
+    make_tester,
+)
+from file_utils import extract_files, write_files
+from context_manager import (
+    build_context_report,
+    discover_project_files,
+)
+from llm_client import FAST_MODEL, PRIMARY_MODEL
+from usage_tracker import tracker
+from team_dashboard import dashboard
+from team_events import events
+from web_search import search_many
+
+MAX_REVIEW_ITERATIONS = int(os.environ.get("MAX_REVIEW_ITERATIONS", "2"))
+MAX_SECURITY_ITERATIONS = int(os.environ.get("MAX_SECURITY_ITERATIONS", "1"))
+MAX_TEST_ITERATIONS = int(os.environ.get("MAX_TEST_ITERATIONS", "3"))
+ENABLE_RESEARCH = os.environ.get("ENABLE_RESEARCH", "true").lower() != "false"
+
+# Stronger model for planning/coding/debugging; faster model for judging and
+# research. These can all be overridden independently in .env.
+MODEL_RESEARCHER = os.environ.get("AI_TEAM_RESEARCHER_MODEL", FAST_MODEL)
+MODEL_ARCHITECT = os.environ.get("AI_TEAM_ARCHITECT_MODEL", PRIMARY_MODEL)
+MODEL_DEVELOPER = os.environ.get("AI_TEAM_DEVELOPER_MODEL", PRIMARY_MODEL)
+MODEL_REVIEWER = os.environ.get("AI_TEAM_REVIEWER_MODEL", FAST_MODEL)
+MODEL_SECURITY = os.environ.get("AI_TEAM_SECURITY_MODEL", FAST_MODEL)
+MODEL_TESTER = os.environ.get("AI_TEAM_TESTER_MODEL", FAST_MODEL)
+MODEL_DEBUGGER = os.environ.get("AI_TEAM_DEBUGGER_MODEL", PRIMARY_MODEL)
+
+
+def log(msg: str):
+    events.emit("TEAM_LOG", message=msg)
+
+
+def show_usage(current_agent: str | None = None):
+    """Compatibility hook; live usage is rendered by the dashboard."""
+    return
+
+
+def _summarize_pytest(result) -> str:
+    """Return or derive a useful compact pytest result summary."""
+    lines = [
+        line.strip()
+        for line in (result.stdout + "\n" + result.stderr).splitlines()
+        if line.strip()
+    ]
+
+    summary_terms = (
+        " passed",
+        " failed",
+        " error",
+        " errors",
+        " skipped",
+        " xfailed",
+        " xpassed",
+    )
+
+    # Prefer pytest's own textual summary when it provides one.
+    for line in reversed(lines):
+        lowered = " " + line.lower()
+
+        if any(term in lowered for term in summary_terms):
+            return line
+
+    # Some pytest configurations suppress the textual summary and emit
+    # only progress symbols, for example:
+    #
+    #     ................. [100%]
+    #
+    # Derive a compact summary from those symbols.
+    progress = ""
+
+    for line in lines:
+        if "%" not in line:
+            continue
+
+        before_percent = line.split("[", 1)[0]
+        progress += "".join(
+            ch for ch in before_percent
+            if ch in ".FEsxX"
+        )
+
+    if progress:
+        counts = {
+            "passed": progress.count("."),
+            "failed": progress.count("F"),
+            "errors": progress.count("E"),
+            "skipped": progress.count("s"),
+            "xfailed": progress.count("x"),
+            "xpassed": progress.count("X"),
+        }
+
+        parts = []
+
+        labels = (
+            ("passed", "passed"),
+            ("failed", "failed"),
+            ("errors", "error"),
+            ("skipped", "skipped"),
+            ("xfailed", "xfailed"),
+            ("xpassed", "xpassed"),
+        )
+
+        for key, label in labels:
+            count = counts[key]
+
+            if not count:
+                continue
+
+            if key == "errors":
+                text = "error" if count == 1 else "errors"
+            else:
+                text = label
+
+            parts.append(f"{count} {text}")
+
+        if parts:
+            return ", ".join(parts)
+
+    if lines:
+        return lines[-1]
+
+    if result.returncode == 0:
+        return "pytest passed"
+
+    return f"pytest exited with code {result.returncode}"
+
+def _parse_agent_decision(raw: str) -> dict:
+    """
+    Normalize Reviewer/Security responses into a stable decision object.
+
+    Structured JSON is preferred. Legacy APPROVED / CHANGES_NEEDED text
+    remains supported so older models or malformed responses do not break
+    orchestration.
+    """
+    text = (raw or "").strip()
+
+    decision = {
+        "verdict": "CHANGES_REQUESTED",
+        "summary": "",
+        "issues": [],
+        "structured": False,
+    }
+
+    if text:
+        candidate = text
+
+        # Tolerate accidental markdown fences even though prompts forbid them.
+        if candidate.startswith("```"):
+            lines = candidate.splitlines()
+
+            if lines and lines[0].startswith("```"):
+                lines = lines[1:]
+
+            if lines and lines[-1].strip() == "```":
+                lines = lines[:-1]
+
+            candidate = "\n".join(lines).strip()
+
+        try:
+            parsed = json.loads(candidate)
+        except (json.JSONDecodeError, TypeError):
+            parsed = None
+
+        if isinstance(parsed, dict):
+            verdict = str(parsed.get("verdict") or "").strip().upper()
+
+            if verdict in {
+                "APPROVED",
+                "CHANGES_REQUESTED",
+                "CHANGES_NEEDED",
+            }:
+                if verdict == "CHANGES_NEEDED":
+                    verdict = "CHANGES_REQUESTED"
+
+                issues = parsed.get("issues")
+                if not isinstance(issues, list):
+                    issues = []
+
+                normalized_issues = []
+
+                for issue in issues:
+                    if not isinstance(issue, dict):
+                        continue
+
+                    normalized_issues.append({
+                        "severity": str(
+                            issue.get("severity") or "medium"
+                        ).strip().lower(),
+                        "category": str(
+                            issue.get("category") or "other"
+                        ).strip().lower(),
+                        "file": str(
+                            issue.get("file") or "unknown"
+                        ).strip(),
+                        "reason": str(
+                            issue.get("reason") or ""
+                        ).strip(),
+                        "requested_change": str(
+                            issue.get("requested_change") or ""
+                        ).strip(),
+                    })
+
+                summary = str(
+                    parsed.get("summary") or ""
+                ).strip()
+
+                valid = True
+                validation_error = ""
+
+                # The orchestrator owns decision integrity. A contradictory
+                # model response must never silently approve the build.
+                if verdict == "APPROVED" and normalized_issues:
+                    verdict = "CHANGES_REQUESTED"
+                    valid = False
+                    validation_error = (
+                        "APPROVED response contained blocking issues."
+                    )
+
+                elif (
+                    verdict == "CHANGES_REQUESTED"
+                    and not normalized_issues
+                ):
+                    valid = False
+                    validation_error = (
+                        "CHANGES_REQUESTED response contained no issues."
+                    )
+
+                return {
+                    "verdict": verdict,
+                    "summary": summary,
+                    "issues": normalized_issues,
+                    "structured": True,
+                    "valid": valid,
+                    "validation_error": validation_error,
+                }
+
+    # Legacy/failure fallback.
+    upper = text.upper()
+
+    if upper.startswith("APPROVED"):
+        decision["verdict"] = "APPROVED"
+        decision["summary"] = (
+            text.splitlines()[0] if text else "Approved"
+        )
+        return decision
+
+    if upper.startswith(("CHANGES_NEEDED", "CHANGES_REQUESTED")):
+        decision["summary"] = (
+            text.splitlines()[0] if text else "Changes requested"
+        )
+        return decision
+
+    # Fail closed: an unparseable review must not silently approve code.
+    decision["summary"] = (
+        "Response could not be parsed as a structured decision."
+    )
+    return decision
+
+
+def _decision_focus_paths(
+    decision: dict,
+) -> list[str]:
+    """
+    Extract unique file paths named by structured review/security issues.
+
+    Unknown or empty file values are ignored. Paths remain relative and are
+    validated later by the context manager against the workspace.
+    """
+    issues = decision.get("issues")
+
+    if not isinstance(issues, list):
+        return []
+
+    focused = []
+    seen = set()
+
+    for issue in issues:
+        if not isinstance(issue, dict):
+            continue
+
+        value = str(
+            issue.get("file") or ""
+        ).strip()
+
+        if not value:
+            continue
+
+        if value.lower() in {
+            "unknown",
+            "n/a",
+            "none",
+        }:
+            continue
+
+        normalized = value.replace("\\", "/")
+
+        while normalized.startswith("./"):
+            normalized = normalized[2:]
+
+        normalized = normalized.strip()
+
+        if not normalized:
+            continue
+
+        if normalized in seen:
+            continue
+
+        seen.add(normalized)
+        focused.append(normalized)
+
+    return focused
+
+
+def _decision_feedback(decision: dict, raw: str) -> str:
+    """Create concise Developer-facing feedback from a normalized decision."""
+    issues = decision.get("issues") or []
+
+    if issues:
+        lines = []
+
+        summary = str(decision.get("summary") or "").strip()
+        if summary:
+            lines.append(summary)
+
+        for index, issue in enumerate(issues, start=1):
+            severity = str(
+                issue.get("severity") or "medium"
+            ).upper()
+            category = str(
+                issue.get("category") or "other"
+            ).upper()
+            file_name = str(
+                issue.get("file") or "unknown"
+            )
+            reason = str(issue.get("reason") or "").strip()
+            change = str(
+                issue.get("requested_change") or ""
+            ).strip()
+
+            lines.append(
+                f"{index}. [{severity}/{category}] "
+                f"{file_name}: {reason}"
+            )
+
+            if change:
+                lines.append(f"   Required change: {change}")
+
+        return "\n".join(lines)
+
+    # Preserve useful legacy prose when structured issues are unavailable.
+    if raw and raw.strip():
+        return raw.strip()
+
+    return str(
+        decision.get("summary") or "Changes requested."
+    )
+
+
+def _project_file_counts(workspace_dir: str) -> tuple[int, int]:
+    """
+    Count final project files from disk.
+
+    Test files are identified by the conventional tests/ directory,
+    test_*.py names, or *_test.py names. Runtime/cache/history files
+    are excluded.
+    """
+    workspace = Path(workspace_dir).resolve()
+
+    ignored_dirs = {
+        "__pycache__",
+        ".pytest_cache",
+        ".git",
+        ".team",
+    }
+
+    ignored_files = {
+        "run_history.json",
+        "run_log.json",
+    }
+
+    source_files = 0
+    test_files = 0
+
+    if not workspace.exists():
+        return source_files, test_files
+
+    for path in workspace.rglob("*"):
+        if not path.is_file():
+            continue
+
+        rel = path.relative_to(workspace)
+
+        if any(part in ignored_dirs for part in rel.parts):
+            continue
+
+        if rel.name in ignored_files:
+            continue
+
+        is_test = (
+            "tests" in rel.parts[:-1]
+            or rel.name.startswith("test_")
+            or rel.name.endswith("_test.py")
+        )
+
+        if is_test:
+            test_files += 1
+        else:
+            source_files += 1
+
+    return source_files, test_files
+
+
+def _ruff_available(
+    workspace_dir: str,
+) -> bool:
+    """Return True when Ruff is already available in the environment."""
+    try:
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "ruff",
+                "--version",
+            ],
+            cwd=workspace_dir,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+    except (
+        subprocess.TimeoutExpired,
+        OSError,
+    ):
+        return False
+
+    return result.returncode == 0
+
+
+def _run_ruff_check(
+    workspace_dir: str,
+) -> dict:
+    """
+    Run Ruff when available.
+
+    Ruff is optional. Missing Ruff never fails the project.
+    """
+    if not _ruff_available(workspace_dir):
+        return {
+            "available": False,
+            "passed": True,
+            "returncode": None,
+            "summary": "Ruff is not installed; static analysis skipped.",
+            "stdout": "",
+            "stderr": "",
+            "issues": [],
+        }
+
+    try:
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "ruff",
+                "check",
+                ".",
+                "--output-format",
+                "concise",
+            ],
+            cwd=workspace_dir,
+            capture_output=True,
+            text=True,
+            timeout=int(
+                os.environ.get(
+                    "RUFF_TIMEOUT_SECONDS",
+                    "60",
+                )
+            ),
+        )
+
+    except subprocess.TimeoutExpired as exc:
+        stdout = exc.stdout or ""
+        stderr = exc.stderr or ""
+
+        if isinstance(stdout, bytes):
+            stdout = stdout.decode(
+                errors="replace"
+            )
+
+        if isinstance(stderr, bytes):
+            stderr = stderr.decode(
+                errors="replace"
+            )
+
+        return {
+            "available": True,
+            "passed": False,
+            "returncode": 124,
+            "summary": "Ruff timed out.",
+            "stdout": str(stdout),
+            "stderr": str(stderr),
+            "issues": [],
+        }
+
+    except OSError as exc:
+        return {
+            "available": True,
+            "passed": False,
+            "returncode": 126,
+            "summary": (
+                "Ruff could not be executed: "
+                f"{type(exc).__name__}: {exc}"
+            ),
+            "stdout": "",
+            "stderr": "",
+            "issues": [],
+        }
+
+    issues = []
+
+    for line in (result.stdout or "").splitlines():
+        line = line.strip()
+
+        if not line:
+            continue
+
+        parts = line.split(":", 3)
+
+        if len(parts) < 4:
+            continue
+
+        file_name = parts[0].strip()
+
+        try:
+            line_number = int(parts[1])
+        except ValueError:
+            line_number = 0
+
+        remainder = parts[3].strip()
+
+        rule = ""
+        message = remainder
+
+        if " " in remainder:
+            maybe_rule, maybe_message = (
+                remainder.split(" ", 1)
+            )
+
+            if (
+                len(maybe_rule) >= 2
+                and maybe_rule[0].isalpha()
+                and maybe_rule[1:].isdigit()
+            ):
+                rule = maybe_rule
+                message = maybe_message.strip()
+
+        issues.append({
+            "file": file_name,
+            "line": line_number,
+            "rule": rule,
+            "message": message,
+        })
+
+    return {
+        "available": True,
+        "passed": result.returncode == 0,
+        "returncode": result.returncode,
+        "summary": (
+            "Ruff passed."
+            if result.returncode == 0
+            else f"Ruff found {len(issues)} issue(s)."
+        ),
+        "stdout": result.stdout,
+        "stderr": result.stderr,
+        "issues": issues,
+    }
+
+
+def _ruff_blocking_issues(
+    ruff_result: dict,
+) -> list[dict]:
+    """
+    Return Ruff findings serious enough to justify a repair pass.
+
+    We intentionally keep this narrow. Style-only findings remain
+    informational.
+    """
+    blocking_prefixes = {
+        "F",
+        "E9",
+    }
+
+    blocking = []
+
+    for issue in ruff_result.get(
+        "issues",
+        [],
+    ):
+        rule = str(
+            issue.get("rule") or ""
+        ).upper()
+
+        if not rule:
+            continue
+
+        if rule.startswith("F"):
+            blocking.append(issue)
+            continue
+
+        if rule.startswith("E9"):
+            blocking.append(issue)
+
+    return blocking
+
+
+def _format_ruff_issues(
+    issues: list[dict],
+) -> str:
+    """Render Ruff findings for an agent repair prompt."""
+    if not issues:
+        return "No blocking Ruff issues."
+
+    lines = [
+        "Blocking Ruff issues:"
+    ]
+
+    for index, issue in enumerate(
+        issues,
+        start=1,
+    ):
+        file_name = issue.get(
+            "file",
+            "unknown",
+        )
+        line = issue.get(
+            "line",
+            0,
+        )
+        rule = issue.get(
+            "rule",
+            "",
+        )
+        message = issue.get(
+            "message",
+            "",
+        )
+
+        location = (
+            f"{file_name}:{line}"
+            if line
+            else str(file_name)
+        )
+
+        lines.append(
+            f"{index}. {location} "
+            f"[{rule}] {message}"
+        )
+
+    return "\n".join(lines)
+
+
+def _validate_python_sources(
+    workspace_dir: str,
+) -> dict:
+    """
+    Compile project Python files without executing them.
+
+    Returns a structured validation result with workspace-relative failures.
+    """
+    workspace = Path(workspace_dir).resolve()
+
+    ignored_dirs = {
+        ".git",
+        ".pytest_cache",
+        "__pycache__",
+        ".team",
+        ".venv",
+        "venv",
+        "node_modules",
+    }
+
+    checked_files = []
+    failures = []
+
+    for path in sorted(workspace.rglob("*.py")):
+        try:
+            resolved = path.resolve()
+            relative = resolved.relative_to(workspace)
+        except (OSError, ValueError):
+            continue
+
+        if any(
+            part in ignored_dirs
+            for part in relative.parts[:-1]
+        ):
+            continue
+
+        relative_name = relative.as_posix()
+        checked_files.append(relative_name)
+
+        try:
+            source = resolved.read_text(
+                encoding="utf-8"
+            )
+
+            compile(
+                source,
+                str(resolved),
+                "exec",
+            )
+
+        except (SyntaxError, IndentationError, TabError) as exc:
+            failures.append({
+                "file": relative_name,
+                "line": int(
+                    getattr(exc, "lineno", 0)
+                    or 0
+                ),
+                "offset": int(
+                    getattr(exc, "offset", 0)
+                    or 0
+                ),
+                "error_type": type(exc).__name__,
+                "message": str(
+                    getattr(exc, "msg", exc)
+                ),
+            })
+
+        except (OSError, UnicodeError) as exc:
+            failures.append({
+                "file": relative_name,
+                "line": 0,
+                "offset": 0,
+                "error_type": type(exc).__name__,
+                "message": str(exc),
+            })
+
+    return {
+        "passed": not failures,
+        "checked_count": len(checked_files),
+        "checked_files": checked_files,
+        "failures": failures,
+    }
+
+
+def _format_python_validation(
+    validation: dict,
+) -> str:
+    """Render compile-validation failures for an agent prompt."""
+    failures = validation.get("failures") or []
+
+    if not failures:
+        return (
+            f"Python compile validation passed for "
+            f"{validation.get('checked_count', 0)} file(s)."
+        )
+
+    lines = [
+        "Python compile validation failed:"
+    ]
+
+    for index, failure in enumerate(
+        failures,
+        start=1,
+    ):
+        file_name = failure.get(
+            "file",
+            "unknown",
+        )
+        line = int(
+            failure.get("line", 0)
+            or 0
+        )
+        error_type = failure.get(
+            "error_type",
+            "Error",
+        )
+        message = failure.get(
+            "message",
+            "",
+        )
+
+        location = (
+            f"{file_name}:{line}"
+            if line
+            else str(file_name)
+        )
+
+        lines.append(
+            f"{index}. {location} — "
+            f"{error_type}: {message}"
+        )
+
+    return "\n".join(lines)
+
+
+def _run_pytest_command(
+    command: list[str],
+    workspace_dir: str,
+    timeout_seconds: int,
+):
+    """
+    Execute pytest without allowing process-level failures to crash the team.
+
+    Synthetic return codes:
+      124 = timeout
+      126 = process/OS launch failure
+    """
+    try:
+        return subprocess.run(
+            command,
+            cwd=workspace_dir,
+            capture_output=True,
+            text=True,
+            timeout=timeout_seconds,
+        )
+
+    except subprocess.TimeoutExpired as exc:
+        stdout = exc.stdout or ""
+        stderr = exc.stderr or ""
+
+        if isinstance(stdout, bytes):
+            stdout = stdout.decode(
+                errors="replace"
+            )
+
+        if isinstance(stderr, bytes):
+            stderr = stderr.decode(
+                errors="replace"
+            )
+
+        timeout_message = (
+            "\nPYTEST_TIMEOUT: "
+            f"pytest exceeded {timeout_seconds} seconds."
+        )
+
+        stderr = (
+            str(stderr).rstrip()
+            + timeout_message
+            + "\n"
+        )
+
+        return subprocess.CompletedProcess(
+            args=command,
+            returncode=124,
+            stdout=str(stdout),
+            stderr=stderr,
+        )
+
+    except OSError as exc:
+        return subprocess.CompletedProcess(
+            args=command,
+            returncode=126,
+            stdout="",
+            stderr=(
+                "PYTEST_PROCESS_ERROR: "
+                f"{type(exc).__name__}: {exc}"
+            ),
+        )
+
+
+def _classify_pytest_failure(
+    stdout: str,
+    stderr: str,
+    returncode: int,
+) -> dict:
+    """
+    Classify a pytest result into a repair-oriented failure category.
+
+    Categories are intentionally broad. They are used to guide retry routing,
+    not to replace the actual pytest output.
+    """
+    stdout = stdout or ""
+    stderr = stderr or ""
+    text = f"{stdout}\n{stderr}"
+    lowered = text.lower()
+
+    result = {
+        "category": "unknown",
+        "summary": "Pytest failed for an unclassified reason.",
+        "recommended_agent": "debugger",
+        "is_test_failure": True,
+        "returncode": returncode,
+    }
+
+    if returncode == 124 or "pytest_timeout:" in lowered:
+        return {
+            "category": "timeout",
+            "summary": (
+                "Pytest exceeded the configured execution timeout."
+            ),
+            "recommended_agent": "debugger",
+            "is_test_failure": False,
+            "returncode": returncode,
+        }
+
+    if (
+        returncode == 126
+        or "pytest_process_error:" in lowered
+    ):
+        return {
+            "category": "process",
+            "summary": (
+                "The pytest process could not be started normally."
+            ),
+            "recommended_agent": "debugger",
+            "is_test_failure": False,
+            "returncode": returncode,
+        }
+
+    if returncode == 0:
+        return {
+            "category": "passed",
+            "summary": "Pytest completed successfully.",
+            "recommended_agent": None,
+            "is_test_failure": False,
+            "returncode": returncode,
+        }
+
+    # pytest commonly returns 5 when no tests were collected.
+    if returncode == 5 or "no tests ran" in lowered:
+        return {
+            "category": "no_tests",
+            "summary": "Pytest did not collect any runnable tests.",
+            "recommended_agent": "tester",
+            "is_test_failure": False,
+            "returncode": returncode,
+        }
+
+    collection_markers = (
+        "error collecting",
+        "errors during collection",
+        "interrupted: 1 error during collection",
+        "interrupted:",
+    )
+
+    if any(marker in lowered for marker in collection_markers):
+        return {
+            "category": "collection",
+            "summary": "Pytest failed while collecting tests.",
+            "recommended_agent": "developer",
+            "is_test_failure": True,
+            "returncode": returncode,
+        }
+
+    import_markers = (
+        "modulenotfounderror:",
+        "importerror:",
+        "cannot import name",
+        "no module named",
+    )
+
+    if any(marker in lowered for marker in import_markers):
+        return {
+            "category": "import",
+            "summary": "Tests failed because application/test imports could not be resolved.",
+            "recommended_agent": "developer",
+            "is_test_failure": True,
+            "returncode": returncode,
+        }
+
+    syntax_markers = (
+        "syntaxerror:",
+        "indentationerror:",
+        "taberror:",
+    )
+
+    if any(marker in lowered for marker in syntax_markers):
+        return {
+            "category": "syntax",
+            "summary": "Python syntax prevented the test suite from running correctly.",
+            "recommended_agent": "developer",
+            "is_test_failure": True,
+            "returncode": returncode,
+        }
+
+    assertion_markers = (
+        "assertionerror",
+        "assert ",
+        " failed",
+    )
+
+    # Restrict the generic FAILED check to normal pytest failure formatting.
+    has_pytest_failed_line = any(
+        line.startswith("FAILED ")
+        for line in text.splitlines()
+    )
+
+    if (
+        "assertionerror" in lowered
+        or has_pytest_failed_line
+        or "assert " in lowered
+    ):
+        return {
+            "category": "assertion",
+            "summary": "Tests ran but one or more expected behaviors were incorrect.",
+            "recommended_agent": "developer",
+            "is_test_failure": True,
+            "returncode": returncode,
+        }
+
+    runtime_markers = (
+        "valueerror:",
+        "typeerror:",
+        "keyerror:",
+        "attributeerror:",
+        "runtimeerror:",
+        "indexerror:",
+        "zerodivisionerror:",
+        "oserror:",
+        "filenotfounderror:",
+    )
+
+    if any(marker in lowered for marker in runtime_markers):
+        return {
+            "category": "runtime",
+            "summary": "Tests reached application code and triggered a runtime exception.",
+            "recommended_agent": "debugger",
+            "is_test_failure": True,
+            "returncode": returncode,
+        }
+
+    infrastructure_markers = (
+        "unrecognized arguments:",
+        "usage: pytest",
+        "pytest: error:",
+        "could not find a version that satisfies",
+        "command not found",
+        "permission denied",
+    )
+
+    if any(marker in lowered for marker in infrastructure_markers):
+        return {
+            "category": "infrastructure",
+            "summary": "The test command or environment failed before normal test execution.",
+            "recommended_agent": "debugger",
+            "is_test_failure": False,
+            "returncode": returncode,
+        }
+
+    return result
+
+
+def _select_test_repair_agent(
+    failure: dict,
+    attempt: int,
+) -> str | None:
+    """
+    Select the agent best suited to repair the current pytest failure.
+
+    Straightforward application failures go to Developer first. Repeated
+    failures escalate to Debugger. Missing tests return to Tester.
+    """
+    category = str(
+        failure.get("category") or "unknown"
+    ).lower()
+
+    if category == "passed":
+        return None
+
+    if category == "no_tests":
+        return "Tester"
+
+    developer_first = {
+        "assertion",
+        "collection",
+        "import",
+        "syntax",
+    }
+
+    if category in developer_first:
+        if attempt == 1:
+            return "Developer"
+
+        return "Debugger"
+
+    return "Debugger"
+
+
+def _extract_pytest_targets(
+    stdout: str,
+    stderr: str,
+    workspace_dir: str,
+    *,
+    max_targets: int = 8,
+) -> list[str]:
+    """
+    Extract safe pytest node IDs from FAILED/ERROR summary lines.
+
+    Returned targets are workspace-relative and suitable for passing directly
+    to pytest. Only test files inside the workspace are accepted.
+    """
+    text = f"{stdout or ''}\n{stderr or ''}"
+    workspace = Path(workspace_dir).resolve()
+
+    pattern = re.compile(
+        r"^(?:FAILED|ERROR)\s+([^\s]+)",
+        re.MULTILINE,
+    )
+
+    targets = []
+    seen = set()
+
+    for match in pattern.finditer(text):
+        raw_target = match.group(1).strip()
+
+        # Defensive cleanup for punctuation occasionally attached by output
+        # formatting.
+        raw_target = raw_target.rstrip(":,")
+
+        if not raw_target:
+            continue
+
+        normalized = raw_target.replace("\\", "/")
+
+        if "::" in normalized:
+            file_part, node_suffix = normalized.split("::", 1)
+            suffix = f"::{node_suffix}"
+        else:
+            file_part = normalized
+            suffix = ""
+
+        candidate = Path(file_part)
+
+        if not candidate.is_absolute():
+            candidate = workspace / candidate
+
+        try:
+            resolved = candidate.resolve()
+            relative = resolved.relative_to(workspace)
+        except (OSError, ValueError):
+            continue
+
+        parts = relative.parts
+        name = relative.name
+
+        is_test_file = (
+            "tests" in parts[:-1]
+            or name.startswith("test_")
+            or name.endswith("_test.py")
+        )
+
+        if not is_test_file:
+            continue
+
+        target = relative.as_posix() + suffix
+
+        if target in seen:
+            continue
+
+        seen.add(target)
+        targets.append(target)
+
+        if len(targets) >= max_targets:
+            break
+
+    return targets
+
+
+def _failure_focus_paths(
+    stdout: str,
+    stderr: str,
+    workspace_dir: str,
+) -> list[str]:
+    """
+    Extract project files referenced by pytest failure output.
+
+    Returned paths are workspace-relative and ordered by first appearance.
+    External library paths and files outside the workspace are ignored.
+    """
+
+    workspace = Path(workspace_dir).resolve()
+    text = (stdout or "") + "\n" + (stderr or "")
+
+    candidates = []
+
+    patterns = (
+        # Python traceback:
+        # File "/path/to/project/foo.py", line 12, in func
+        r'File\s+"([^"]+)"\s*,\s*line\s+\d+',
+
+        # pytest short traceback / assertion locations:
+        # tests/test_cli.py:17:
+        # src/app.py:42: ValueError
+        r'(?m)^([^\s:][^:\n]*?\.py):\d+(?::\d+)?(?::|\s|$)',
+    )
+
+    for pattern in patterns:
+        for match in re.finditer(pattern, text):
+            candidates.append(match.group(1).strip())
+
+    focused = []
+    seen = set()
+
+    for value in candidates:
+        path = Path(value)
+
+        if not path.is_absolute():
+            path = workspace / path
+
+        try:
+            absolute = path.resolve()
+            relative = absolute.relative_to(workspace)
+        except (OSError, ValueError):
+            continue
+
+        if not absolute.is_file():
+            continue
+
+        normalized = relative.as_posix()
+
+        if normalized in seen:
+            continue
+
+        seen.add(normalized)
+        focused.append(normalized)
+
+    return focused
+
+
+def _safe_context(
+    paths: list[str],
+    workspace_dir: str,
+    role: str = "developer",
+    *,
+    focus_paths: list[str] | None = None,
+    report_sink: list[dict] | None = None,
+    purpose: str | None = None,
+) -> str:
+    """
+    Build bounded, role-aware context from the actual current repository.
+
+    Explicitly tracked paths are combined with files discovered on disk so
+    agents can reason about files that were not created through the current
+    orchestration run.
+    """
+    discovered_paths = discover_project_files(
+        workspace_dir,
+    )
+
+    context_paths = list(
+        dict.fromkeys(
+            list(paths or [])
+            + discovered_paths
+        )
+    )
+
+    context, report = build_context_report(
+        context_paths,
+        workspace_dir,
+        role,
+        focus_paths=focus_paths,
+    )
+
+    if report_sink is not None:
+        stored_report = dict(report)
+        stored_report["sequence"] = len(report_sink) + 1
+        stored_report["purpose"] = (
+            purpose or role.lower()
+        )
+        report_sink.append(stored_report)
+
+    events.emit(
+        "TEAM_TELEMETRY",
+        context_role=report["role"],
+        context_budget_used=report["budget_used"],
+        context_budget_max=report["budget_max"],
+        context_budget_percent=report["budget_percent"],
+        context_selected=report["selected_count"],
+        context_visible=report["visible_count"],
+        context_omitted=report["omitted_count"],
+        context_focus=report["focus_count"],
+        context_focused_visible=report[
+            "focused_visible_count"
+        ],
+        context_files=report["visible_files"],
+        context_focus_files=report[
+            "focused_visible_files"
+        ],
+    )
+
+    return context
+
+
+def _apply_agent_files(
+    output: str,
+    workspace_dir: str,
+    existing: list[str],
+    protected_paths: set[str] | None = None,
+    changes_out: list[str] | None = None,
+) -> list[str]:
+    """
+    Apply files emitted by an agent while protecting selected files.
+
+    The filesystem layer handles path normalization and traversal protection.
+    This layer additionally prevents repair agents from modifying protected
+    files such as the test suite.
+    """
+    files = extract_files(output)
+
+    if not files:
+        return existing
+
+    protected_paths = protected_paths or set()
+
+    # Normalize protected paths to absolute paths so comparisons are reliable.
+    workspace = Path(workspace_dir).resolve()
+    protected_absolute = set()
+
+    for path in protected_paths:
+        protected_absolute.add(str((workspace / path).resolve()))
+
+    safe_files = {}
+
+    for rel_path, content in files.items():
+        normalized = rel_path.replace("\\", "/").lstrip("/")
+
+        # Agents sometimes include the workspace directory in their paths.
+        workspace_name = workspace.name
+        prefix = workspace_name + "/"
+
+        if normalized.startswith(prefix):
+            normalized = normalized[len(prefix):]
+
+        candidate = (workspace / normalized).resolve()
+
+        # Never allow an agent to overwrite a protected file.
+        if str(candidate) in protected_absolute:
+            log(f"Protected file skipped: {normalized}")
+            continue
+
+        safe_files[normalized] = content
+
+    if not safe_files:
+        return existing
+
+    written = write_files(safe_files, workspace_dir)
+
+    # Record only the files written by THIS agent action. Keep these
+    # workspace-relative so archived run logs remain portable.
+    if changes_out is not None:
+        for path in written:
+            try:
+                relative = (
+                    Path(path)
+                    .resolve()
+                    .relative_to(workspace)
+                    .as_posix()
+                )
+            except ValueError:
+                relative = str(path)
+
+            changes_out.append(relative)
+
+    return list(dict.fromkeys(existing + written))
+
+
+def _clean_workspace(workspace_dir: str):
+    """Remove the previous generated project before starting a new run."""
+    workspace = Path(workspace_dir).resolve()
+    project_root = Path(__file__).resolve().parent
+
+    # Never allow the generated-project cleanup to delete the AI Dev Team
+    # itself. The workspace must be a child directory of the team project.
+    if workspace == project_root:
+        raise RuntimeError(
+            "Refusing to clean the AI Dev Team root directory. "
+            "Generated workspaces must be inside the team project."
+        )
+
+    try:
+        workspace.relative_to(project_root)
+    except ValueError:
+        raise RuntimeError(
+            f"Refusing to clean workspace outside the AI Dev Team: {workspace}"
+        )
+
+    if workspace.exists():
+        for child in workspace.iterdir():
+            # Persistent AI Dev Team state must survive project cleanup.
+            # run_history.json stores lightweight summaries while .team/
+            # stores richer per-run artifacts such as replay logs.
+            if child.name in {"run_history.json", ".team"}:
+                continue
+
+            if child.is_dir():
+                import shutil
+                shutil.rmtree(child)
+            else:
+                child.unlink()
+
+    workspace.mkdir(parents=True, exist_ok=True)
+
+
+def _build_validation_summary(
+    steps: list[dict],
+) -> dict:
+    """
+    Build a compact summary of compile, Ruff, and pytest activity.
+    """
+    python_checks = []
+    ruff_checks = []
+    pytest_checks = []
+    repair_agents = []
+
+    for step in steps:
+        action = step.get("action")
+        agent = step.get("agent")
+
+        if action == "python_validation":
+            python_checks.append(step)
+
+        elif action == "ruff":
+            ruff_checks.append(step)
+
+        elif action == "pytest":
+            pytest_checks.append(step)
+
+        elif action in {
+            "compile_repair",
+            "ruff_repair",
+            "test_repair",
+        }:
+            if agent and agent not in repair_agents:
+                repair_agents.append(agent)
+
+        elif (
+            agent in {"Developer", "Debugger"}
+            and step.get("failure")
+        ):
+            if agent not in repair_agents:
+                repair_agents.append(agent)
+
+    python_status = "NOT_RUN"
+
+    if python_checks:
+        python_status = (
+            "PASSED"
+            if python_checks[-1].get("passed")
+            else "FAILED"
+        )
+
+    ruff_status = "NOT_RUN"
+
+    if ruff_checks:
+        latest_ruff = ruff_checks[-1]
+
+        if not latest_ruff.get("available"):
+            ruff_status = "SKIPPED"
+        else:
+            ruff_status = (
+                "PASSED"
+                if latest_ruff.get("passed")
+                else "FAILED"
+            )
+
+    full_pytest_runs = sum(
+        1
+        for step in pytest_checks
+        if step.get("scope") == "full"
+    )
+
+    targeted_pytest_runs = sum(
+        1
+        for step in pytest_checks
+        if step.get("scope") == "targeted"
+    )
+
+    pytest_passed = any(
+        step.get("scope") == "full"
+        and step.get("passed") is True
+        for step in pytest_checks
+    )
+
+    categories = []
+
+    for step in pytest_checks:
+        failure = step.get("failure") or {}
+        category = failure.get("category")
+
+        if (
+            category
+            and category != "passed"
+            and category not in categories
+        ):
+            categories.append(category)
+
+    return {
+        "python_validation": python_status,
+        "python_checks": len(python_checks),
+        "ruff": ruff_status,
+        "ruff_checks": len(ruff_checks),
+        "pytest_passed": pytest_passed,
+        "pytest_executions": len(pytest_checks),
+        "pytest_full_runs": full_pytest_runs,
+        "pytest_targeted_runs": targeted_pytest_runs,
+        "pytest_failure_categories": categories,
+        "repair_agents": repair_agents,
+    }
+
+
+def run_team(task: str, workspace_dir: str = "workspace"):
+    # Each team invocation gets its own token accounting.
+    tracker.reset()
+
+    events.emit(
+        "TEAM_STARTED",
+        message=task,
+    )
+
+    dashboard.start()
+
+    workspace = Path(workspace_dir)
+    _clean_workspace(workspace_dir)
+    run_log = {
+        "task": task,
+        "models": {
+            "researcher": MODEL_RESEARCHER,
+            "architect": MODEL_ARCHITECT,
+            "developer": MODEL_DEVELOPER,
+            "reviewer": MODEL_REVIEWER,
+            "security": MODEL_SECURITY,
+            "tester": MODEL_TESTER,
+            "debugger": MODEL_DEBUGGER,
+        },
+        "steps": [],
+        "context_reports": [],
+    }
+
+    researcher = make_researcher(MODEL_RESEARCHER)
+    architect = make_architect(MODEL_ARCHITECT)
+    developer = make_developer(MODEL_DEVELOPER)
+    reviewer = make_reviewer(MODEL_REVIEWER)
+    security = make_security(MODEL_SECURITY)
+    tester = make_tester(MODEL_TESTER)
+    debugger = make_debugger(MODEL_DEBUGGER)
+
+    # 0. Research. Web-search failure is non-fatal.
+    research_notes = ""
+    if ENABLE_RESEARCH:
+        log("Researcher is searching the web...")
+        raw_results = search_many([task, f"{task} best practices"], max_results_each=3)
+        research_notes = researcher.say(
+            f"Task:\n{task}\n\nRaw web search results:\n{raw_results}\n\n"
+            "Summarize only useful, supported information for the Architect and Developer."
+        )
+        run_log["steps"].append({"agent": "Researcher", "output": research_notes})
+        show_usage("Researcher")
+        log("Research notes ready.")
+
+    # 1. Architect.
+    log("Architect is planning...")
+    plan = architect.say(
+        f"Task:\n{task}\n\n"
+        + (f"Research notes:\n{research_notes}\n\n" if research_notes else "")
+        + "Produce a short implementation plan."
+    )
+    run_log["steps"].append({"agent": "Architect", "output": plan})
+    show_usage("Architect")
+    log("Plan ready.")
+
+    # 2. Developer first pass.
+    log("Developer is writing the first draft...")
+    dev_output = developer.say(
+        f"""Task:
+{task}
+
+Architect's plan:
+{plan}
+
+IMPORTANT FILE RULES:
+- The current workspace directory is the project root.
+- All FILE paths must be relative to the project root.
+- Never prefix file paths with "workspace/".
+- Example: src/main.py
+- Example: tests/test_main.py
+- Never create workspace/workspace/... paths.
+- Do not use absolute paths.
+- Do not use ../ paths.
+- Write the code now, following the FILE format exactly.
+"""
+    )
+    initial_changed_paths = []
+    written_paths = _apply_agent_files(
+        dev_output,
+        workspace_dir,
+        [],
+        changes_out=initial_changed_paths,
+    )
+    events.emit(
+        "TEAM_TELEMETRY",
+        phase="Development",
+        source_files=len(written_paths),
+    )
+    run_log["steps"].append({
+        "agent": "Developer",
+        "output": dev_output,
+        "files": written_paths,
+        "files_changed": initial_changed_paths,
+    })
+    show_usage("Developer")
+    if not written_paths:
+        raise RuntimeError("Developer response contained no parseable FILE blocks; cannot continue safely.")
+
+    # 3. Code review loop.
+    for i in range(1, MAX_REVIEW_ITERATIONS + 1):
+        events.emit(
+            "TEAM_TELEMETRY",
+            phase="Code Review",
+            review_round=i,
+            review_max=MAX_REVIEW_ITERATIONS,
+        )
+        log(f"Reviewer round {i}...")
+        review = reviewer.say(
+            f"Task:\n{task}\n\nReview this code:\n\n"
+            f"{_safe_context(written_paths, workspace_dir, role='reviewer', report_sink=run_log["context_reports"], purpose="review")}"
+        )
+        review_decision = _parse_agent_decision(review)
+
+        run_log["steps"].append({
+            "agent": "Reviewer",
+            "round": i,
+            "output": review,
+            "decision": review_decision,
+        })
+
+        show_usage("Reviewer")
+
+        if review_decision["verdict"] == "APPROVED":
+            log("Reviewer approved the code.")
+            break
+
+        log("Reviewer requested changes. Sending back to Developer...")
+
+        review_feedback = _decision_feedback(
+            review_decision,
+            review,
+        )
+
+        review_focus = _decision_focus_paths(
+            review_decision,
+        )
+
+        dev_output = developer.say(
+            f"Task:\n{task}\n\n"
+            f"Current code:\n"
+            f"{_safe_context(written_paths, workspace_dir, role='developer', focus_paths=review_focus, report_sink=run_log["context_reports"], purpose="review_repair")}\n\n"
+            f"Files implicated by Reviewer:\n"
+            f"{', '.join(review_focus) if review_focus else '(none detected)'}\n\n"
+            f"Reviewer feedback:\n{review_feedback}\n\n"
+            "Revise the code. Re-output the COMPLETE contents of every "
+            "file that needs a change."
+        )
+        changed_paths = []
+        written_paths = _apply_agent_files(
+            dev_output,
+            workspace_dir,
+            written_paths,
+            changes_out=changed_paths,
+        )
+        events.emit(
+            "TEAM_TELEMETRY",
+            source_files=len(written_paths),
+        )
+        run_log["steps"].append({
+            "agent": "Developer",
+            "round": i,
+            "output": dev_output,
+            "files": written_paths,
+            "files_changed": changed_paths,
+        })
+        show_usage("Developer")
+
+    # 4. Security review loop.
+    for i in range(1, MAX_SECURITY_ITERATIONS + 1):
+        events.emit(
+            "TEAM_TELEMETRY",
+            phase="Security Review",
+            security_round=i,
+            security_max=MAX_SECURITY_ITERATIONS,
+        )
+        log(f"Security review round {i}...")
+        sec_review = security.say(
+            f"Task:\n{task}\n\nReview this code for security issues:\n\n"
+            f"{_safe_context(written_paths, workspace_dir, role='security', report_sink=run_log["context_reports"], purpose="security_review")}"
+        )
+        security_decision = _parse_agent_decision(sec_review)
+
+        run_log["steps"].append({
+            "agent": "Security",
+            "round": i,
+            "output": sec_review,
+            "decision": security_decision,
+        })
+
+        show_usage("Security")
+
+        if security_decision["verdict"] == "APPROVED":
+            log("Security review approved the code.")
+            break
+
+        log("Security review found issues. Sending back to Developer...")
+
+        security_feedback = _decision_feedback(
+            security_decision,
+            sec_review,
+        )
+
+        security_focus = _decision_focus_paths(
+            security_decision,
+        )
+
+        dev_output = developer.say(
+            f"Task:\n{task}\n\n"
+            f"Current code:\n"
+            f"{_safe_context(written_paths, workspace_dir, role='developer', focus_paths=security_focus, report_sink=run_log["context_reports"], purpose="security_repair")}\n\n"
+            f"Files implicated by Security:\n"
+            f"{', '.join(security_focus) if security_focus else '(none detected)'}\n\n"
+            f"Security feedback:\n{security_feedback}\n\n"
+            "Fix the issues and re-output the COMPLETE contents of every "
+            "file that needs a change."
+        )
+        changed_paths = []
+        written_paths = _apply_agent_files(
+            dev_output,
+            workspace_dir,
+            written_paths,
+            changes_out=changed_paths,
+        )
+        run_log["steps"].append({
+            "agent": "Developer",
+            "round": i,
+            "output": dev_output,
+            "files": written_paths,
+            "files_changed": changed_paths,
+        })
+        show_usage("Developer")
+
+    # 5. Tester writes tests.
+    log("Tester is writing tests...")
+    test_output = tester.say(
+        f"""Task:
+{task}
+
+Code to test:
+
+{_safe_context(written_paths, workspace_dir, role='tester', report_sink=run_log["context_reports"], purpose="test_generation")}
+
+IMPORTANT TESTING RULES:
+- The current workspace directory is the project root.
+- All FILE paths must be relative to the project root.
+- Never prefix paths with "workspace/".
+- Create or update TEST files only.
+- Do not modify application/source files.
+- Test files should normally live under tests/.
+- Follow the existing project structure when adding tests.
+"""
+    )
+
+    test_files = extract_files(test_output)
+
+    # Tester owns the test suite. These files become protected from all
+    # subsequent Developer/Debugger repair attempts.
+    test_paths = write_files(test_files, workspace_dir)
+
+    protected_test_paths = {
+        str(Path(path).resolve())
+        for path in test_paths
+    }
+
+    events.emit(
+        "TEAM_TELEMETRY",
+        phase="Testing",
+        test_files=len(test_paths),
+        test_max=MAX_TEST_ITERATIONS,
+    )
+
+    run_log["steps"].append({
+        "agent": "Tester",
+        "output": test_output,
+        "files": test_paths,
+    })
+    show_usage("Tester")
+
+    # 6. Run tests for real and repair failures.
+    final_test_result = None
+    full_suite_passed = False
+    pending_test_targets: list[str] = []
+    pytest_execution = 0
+
+    for i in range(1, MAX_TEST_ITERATIONS + 1):
+        scopes = []
+
+        if pending_test_targets:
+            scopes.append(
+                (
+                    "targeted",
+                    list(pending_test_targets),
+                )
+            )
+
+        scopes.append(("full", []))
+
+        repair_needed = False
+
+        for pytest_scope, pytest_targets in scopes:
+            python_validation = (
+                _validate_python_sources(
+                    workspace_dir
+                )
+            )
+
+            events.emit(
+                "TEAM_TELEMETRY",
+                python_validation_status=(
+                    "PASSED"
+                    if python_validation["passed"]
+                    else "FAILED"
+                ),
+                python_validation_files=(
+                    python_validation[
+                        "checked_count"
+                    ]
+                ),
+                python_validation_failures=len(
+                    python_validation[
+                        "failures"
+                    ]
+                ),
+            )
+
+            if not python_validation["passed"]:
+                validation_focus = [
+                    str(item.get("file"))
+                    for item in python_validation[
+                        "failures"
+                    ]
+                    if item.get("file")
+                ]
+
+                validation_text = (
+                    _format_python_validation(
+                        python_validation
+                    )
+                )
+
+                fixer_name = (
+                    "Developer"
+                    if i == 1
+                    else "Debugger"
+                )
+
+                fixer = (
+                    developer
+                    if fixer_name == "Developer"
+                    else debugger
+                )
+
+                log(
+                    "Python validation failed. "
+                    f"Routing compile repair "
+                    f"to {fixer_name}..."
+                )
+
+                fix_output = fixer.say(
+                    f"Task:\n{task}\n\n"
+                    f"Current application code:\n"
+                    f"{_safe_context(written_paths, workspace_dir, role=fixer_name.lower(), focus_paths=validation_focus, report_sink=run_log['context_reports'], purpose='compile_repair')}\n\n"
+                    f"Python compile validation:\n"
+                    f"{validation_text}\n\n"
+                    "Fix the APPLICATION CODE so every "
+                    "Python file compiles successfully. "
+                    "Do not modify tests. "
+                    "Re-output the COMPLETE contents "
+                    "of every application file you change."
+                )
+
+                changed_paths = []
+
+                written_paths = _apply_agent_files(
+                    fix_output,
+                    workspace_dir,
+                    written_paths,
+                    protected_test_paths,
+                    changes_out=changed_paths,
+                )
+
+                run_log["steps"].append({
+                    "agent": "Orchestrator",
+                    "action": "python_validation",
+                    "attempt": i,
+                    "passed": False,
+                    "validation": python_validation,
+                })
+
+                run_log["steps"].append({
+                    "agent": fixer_name,
+                    "round": i,
+                    "action": "compile_repair",
+                    "output": fix_output,
+                    "files": written_paths,
+                    "files_changed": changed_paths,
+                    "validation": python_validation,
+                })
+
+                show_usage(fixer_name)
+                repair_needed = True
+                break
+
+            run_log["steps"].append({
+                "agent": "Orchestrator",
+                "action": "python_validation",
+                "attempt": i,
+                "passed": True,
+                "checked_files": (
+                    python_validation[
+                        "checked_count"
+                    ]
+                ),
+            })
+
+            ruff_result = _run_ruff_check(
+                workspace_dir
+            )
+
+            blocking_ruff = (
+                _ruff_blocking_issues(
+                    ruff_result
+                )
+            )
+
+            events.emit(
+                "TEAM_TELEMETRY",
+                ruff_available=(
+                    ruff_result["available"]
+                ),
+                ruff_status=(
+                    "SKIPPED"
+                    if not ruff_result["available"]
+                    else (
+                        "PASSED"
+                        if not blocking_ruff
+                        else "FAILED"
+                    )
+                ),
+                ruff_issues=len(
+                    ruff_result.get(
+                        "issues",
+                        [],
+                    )
+                ),
+                ruff_blocking=len(
+                    blocking_ruff
+                ),
+            )
+
+            run_log["steps"].append({
+                "agent": "Orchestrator",
+                "action": "ruff",
+                "attempt": i,
+                "available": (
+                    ruff_result["available"]
+                ),
+                "passed": not blocking_ruff,
+                "blocking_issues": (
+                    blocking_ruff
+                ),
+                "issue_count": len(
+                    ruff_result.get(
+                        "issues",
+                        [],
+                    )
+                ),
+                "summary": (
+                    ruff_result["summary"]
+                ),
+            })
+
+            if blocking_ruff:
+                ruff_focus = [
+                    str(issue.get("file"))
+                    for issue in blocking_ruff
+                    if issue.get("file")
+                ]
+
+                fixer_name = (
+                    "Developer"
+                    if i == 1
+                    else "Debugger"
+                )
+
+                fixer = (
+                    developer
+                    if fixer_name == "Developer"
+                    else debugger
+                )
+
+                log(
+                    "Blocking static-analysis "
+                    f"issues detected. Routing "
+                    f"repair to {fixer_name}..."
+                )
+
+                ruff_text = (
+                    _format_ruff_issues(
+                        blocking_ruff
+                    )
+                )
+
+                fix_output = fixer.say(
+                    f"Task:\n{task}\n\n"
+                    f"Current repository:\n"
+                    f"{_safe_context(written_paths, workspace_dir, role=fixer_name.lower(), focus_paths=ruff_focus, report_sink=run_log['context_reports'], purpose='ruff_repair')}\n\n"
+                    f"Static-analysis findings:\n"
+                    f"{ruff_text}\n\n"
+                    "Fix only the blocking static-analysis "
+                    "problems in APPLICATION CODE. "
+                    "Do not modify tests. "
+                    "Do not perform unrelated refactors. "
+                    "Re-output the COMPLETE contents "
+                    "of every application file you change."
+                )
+
+                changed_paths = []
+
+                written_paths = _apply_agent_files(
+                    fix_output,
+                    workspace_dir,
+                    written_paths,
+                    protected_test_paths,
+                    changes_out=changed_paths,
+                )
+
+                run_log["steps"].append({
+                    "agent": fixer_name,
+                    "round": i,
+                    "action": "ruff_repair",
+                    "output": fix_output,
+                    "files": written_paths,
+                    "files_changed": changed_paths,
+                    "ruff_issues": blocking_ruff,
+                })
+
+                show_usage(fixer_name)
+
+                repair_needed = True
+                break
+
+            pytest_execution += 1
+
+            command = [
+                sys.executable,
+                "-m",
+                "pytest",
+                "-q",
+            ]
+
+            if pytest_targets:
+                command.extend(pytest_targets)
+
+            events.emit(
+                "TEAM_TELEMETRY",
+                phase="Testing",
+                test_attempt=i,
+                test_max=MAX_TEST_ITERATIONS,
+                pytest_status="RUNNING",
+                pytest_summary=(
+                    "pytest is running..."
+                    if pytest_scope == "full"
+                    else "targeted pytest is running..."
+                ),
+                pytest_scope=pytest_scope,
+                pytest_targets=pytest_targets,
+            )
+
+            if pytest_scope == "targeted":
+                log(
+                    "Running targeted pytest "
+                    f"(repair round {i}): "
+                    + ", ".join(pytest_targets)
+                )
+            else:
+                log(
+                    f"Running full pytest suite "
+                    f"(repair round {i})..."
+                )
+
+            result = _run_pytest_command(
+                command,
+                workspace_dir,
+                int(
+                    os.environ.get(
+                        "PYTEST_TIMEOUT_SECONDS",
+                        "120",
+                    )
+                ),
+            )
+
+            final_test_result = result
+            passed = result.returncode == 0
+
+            pytest_summary = _summarize_pytest(
+                result
+            )
+
+            failure_info = _classify_pytest_failure(
+                result.stdout,
+                result.stderr,
+                result.returncode,
+            )
+
+            events.emit(
+                "TEAM_TELEMETRY",
+                pytest_status=(
+                    "PASSED"
+                    if passed
+                    else "FAILED"
+                ),
+                pytest_summary=pytest_summary,
+                pytest_category=(
+                    failure_info["category"]
+                ),
+                pytest_recommended_agent=(
+                    failure_info[
+                        "recommended_agent"
+                    ]
+                ),
+                pytest_scope=pytest_scope,
+                pytest_targets=pytest_targets,
+            )
+
+            run_log["steps"].append({
+                "agent": "Orchestrator",
+                "action": "pytest",
+                "attempt": i,
+                "execution": pytest_execution,
+                "scope": pytest_scope,
+                "targets": pytest_targets,
+                "passed": passed,
+                "failure": failure_info,
+                "stdout": result.stdout[-6000:],
+                "stderr": result.stderr[-3000:],
+            })
+
+            if passed:
+                if pytest_scope == "targeted":
+                    log(
+                        "Targeted failing tests now pass. "
+                        "Verifying the complete suite..."
+                    )
+
+                    pending_test_targets = []
+                    continue
+
+                full_suite_passed = True
+                log("All tests passed.")
+                break
+
+            repair_needed = True
+
+            fixer_name = _select_test_repair_agent(
+                failure_info,
+                i,
+            )
+
+            if fixer_name == "Developer":
+                fixer = developer
+            elif fixer_name == "Debugger":
+                fixer = debugger
+            else:
+                fixer = None
+
+            log(
+                "Tests failed "
+                f"[{failure_info['category']} / "
+                f"{pytest_scope}]. "
+                f"Routing repair to {fixer_name}..."
+            )
+
+            failure_focus = _failure_focus_paths(
+                result.stdout,
+                result.stderr,
+                workspace_dir,
+            )
+
+            discovered_targets = (
+                _extract_pytest_targets(
+                    result.stdout,
+                    result.stderr,
+                    workspace_dir,
+                )
+            )
+
+            non_targetable_categories = {
+                "timeout",
+                "process",
+                "infrastructure",
+                "no_tests",
+            }
+
+            if (
+                failure_info["category"]
+                in non_targetable_categories
+            ):
+                pending_test_targets = []
+
+            elif discovered_targets:
+                pending_test_targets = (
+                    discovered_targets
+                )
+
+            elif pytest_scope == "targeted":
+                pending_test_targets = list(
+                    pytest_targets
+                )
+
+            else:
+                pending_test_targets = []
+
+            if fixer_name == "Tester":
+                test_fix_output = tester.say(
+                    f"Task:\n{task}\n\n"
+                    f"Current repository:\n"
+                    f"{_safe_context(written_paths, workspace_dir, role='tester', focus_paths=failure_focus, report_sink=run_log['context_reports'], purpose='pytest_test_repair')}\n\n"
+                    f"pytest classification:\n"
+                    f"{failure_info['category']}: "
+                    f"{failure_info['summary']}\n\n"
+                    f"pytest output:\n"
+                    f"{result.stdout}\n"
+                    f"{result.stderr}\n\n"
+                    "Pytest did not find a usable test suite. "
+                    "Repair or create TEST FILES ONLY. "
+                    "Do not modify application code. "
+                    "Output the COMPLETE contents of every "
+                    "test file you create or change."
+                )
+
+                extracted_test_files = extract_files(
+                    test_fix_output
+                )
+
+                repaired_test_files = {}
+
+                for (
+                    path,
+                    content,
+                ) in extracted_test_files.items():
+                    normalized = str(path).replace(
+                        "\\",
+                        "/",
+                    )
+
+                    candidate = Path(normalized)
+
+                    is_test_file = (
+                        "tests"
+                        in candidate.parts[:-1]
+                        or candidate.name.startswith(
+                            "test_"
+                        )
+                        or candidate.name.endswith(
+                            "_test.py"
+                        )
+                    )
+
+                    if is_test_file:
+                        repaired_test_files[
+                            path
+                        ] = content
+
+                written_test_paths = write_files(
+                    repaired_test_files,
+                    workspace_dir,
+                )
+
+                protected_test_paths.update(
+                    str(Path(path).resolve())
+                    for path in written_test_paths
+                )
+
+                workspace_root = Path(
+                    workspace_dir
+                ).resolve()
+
+                changed_test_paths = []
+
+                for path in written_test_paths:
+                    resolved = Path(path).resolve()
+
+                    try:
+                        relative = (
+                            resolved.relative_to(
+                                workspace_root
+                            )
+                        )
+                    except ValueError:
+                        continue
+
+                    changed_test_paths.append(
+                        relative.as_posix()
+                    )
+
+                run_log["steps"].append({
+                    "agent": "Tester",
+                    "round": i,
+                    "action": "test_repair",
+                    "output": test_fix_output,
+                    "files": written_test_paths,
+                    "files_changed": (
+                        changed_test_paths
+                    ),
+                    "failure": failure_info,
+                    "pytest_scope": (
+                        pytest_scope
+                    ),
+                })
+
+                show_usage("Tester")
+
+            else:
+                fix_output = fixer.say(
+                    f"Task:\n{task}\n\n"
+                    f"Current application code:\n"
+                    f"{_safe_context(written_paths, workspace_dir, role=fixer_name.lower(), focus_paths=failure_focus, report_sink=run_log['context_reports'], purpose='pytest_repair')}\n\n"
+                    f"Files implicated by pytest:\n"
+                    f"{', '.join(failure_focus) if failure_focus else '(none detected)'}\n\n"
+                    f"Targeted failing tests:\n"
+                    f"{', '.join(pending_test_targets) if pending_test_targets else '(none detected)'}\n\n"
+                    f"Failure classification:\n"
+                    f"{failure_info['category']}: "
+                    f"{failure_info['summary']}\n\n"
+                    f"pytest output:\n"
+                    f"{result.stdout}\n"
+                    f"{result.stderr}\n\n"
+                    "Fix the application code "
+                    "(not the tests) so the tests pass. "
+                    "Re-output the COMPLETE contents "
+                    "of every application file you change."
+                )
+
+                changed_paths = []
+
+                written_paths = _apply_agent_files(
+                    fix_output,
+                    workspace_dir,
+                    written_paths,
+                    protected_test_paths,
+                    changes_out=changed_paths,
+                )
+
+                run_log["steps"].append({
+                    "agent": fixer_name,
+                    "round": i,
+                    "output": fix_output,
+                    "files": written_paths,
+                    "files_changed": changed_paths,
+                    "failure": failure_info,
+                    "pytest_scope": pytest_scope,
+                    "pytest_targets": (
+                        pending_test_targets
+                    ),
+                })
+
+                show_usage(fixer_name)
+
+            break
+
+        if full_suite_passed:
+            break
+
+        if not repair_needed:
+            log(
+                "Pytest did not pass and no repair "
+                "path was selected."
+            )
+
+    else:
+        log(
+            "Max test repair iterations reached; "
+            "full suite is not verified."
+        )
+
+    run_log["status"] = (
+        "passed"
+        if full_suite_passed
+        else "tests_failed"
+    )
+
+    events.emit(
+        "TEAM_TELEMETRY",
+        phase=(
+            "Complete"
+            if run_log["status"] == "passed"
+            else "Failed"
+        ),
+    )
+
+    run_log["validation_summary"] = (
+        _build_validation_summary(
+            run_log["steps"]
+        )
+    )
+
+    run_log["validation"] = (
+        run_log["validation_summary"]
+    )
+
+    # Build a compact persistent history record.
+    review_rounds = max(
+        (
+            int(step.get("round", 0))
+            for step in run_log["steps"]
+            if step.get("agent") == "Reviewer"
+        ),
+        default=0,
+    )
+
+    security_rounds = max(
+        (
+            int(step.get("round", 0))
+            for step in run_log["steps"]
+            if step.get("agent") == "Security"
+        ),
+        default=0,
+    )
+
+    test_attempts = max(
+        (
+            int(step.get("attempt", 0))
+            for step in run_log["steps"]
+            if step.get("action") == "pytest"
+        ),
+        default=0,
+    )
+
+    pytest_summary = (
+        _summarize_pytest(final_test_result)
+        if final_test_result is not None
+        else ""
+    )
+
+    source_file_count, test_file_count = _project_file_counts(
+        workspace_dir
+    )
+
+    # Summarize context usage for lightweight run history.
+    context_reports = run_log.get(
+        "context_reports",
+        [],
+    )
+
+    context_calls = len(context_reports)
+
+    context_peak_percent = max(
+        (
+            float(report.get("budget_percent", 0.0))
+            for report in context_reports
+        ),
+        default=0.0,
+    )
+
+    context_total_visible = sum(
+        int(report.get("visible_count", 0))
+        for report in context_reports
+    )
+
+    context_total_omitted = sum(
+        int(report.get("omitted_count", 0))
+        for report in context_reports
+    )
+
+    # Save this run to persistent history.
+    run_number = tracker.save_history(
+        str(workspace / "run_history.json"),
+        metadata={
+            "task": task,
+            "result": run_log["status"],
+            "pytest_summary": pytest_summary,
+            "source_files": source_file_count,
+            "test_files": test_file_count,
+            "review_rounds": review_rounds,
+            "security_rounds": security_rounds,
+            "test_attempts": test_attempts,
+            "context_calls": context_calls,
+            "context_peak_percent": round(
+                context_peak_percent,
+                1,
+            ),
+            "context_visible_files": context_total_visible,
+            "context_omitted_files": context_total_omitted,
+            "validation": run_log.get(
+                "validation_summary",
+                {},
+            ),
+        },
+    )
+
+    run_log["run_number"] = run_number
+    run_log["pytest_summary"] = pytest_summary
+    run_log["source_files"] = source_file_count
+    run_log["test_files"] = test_file_count
+    run_log["review_rounds"] = review_rounds
+    run_log["security_rounds"] = security_rounds
+    run_log["test_attempts"] = test_attempts
+    run_log["context_summary"] = {
+        "calls": context_calls,
+        "peak_budget_percent": round(
+            context_peak_percent,
+            1,
+        ),
+        "total_visible_files": context_total_visible,
+        "total_omitted_files": context_total_omitted,
+    }
+
+    final_usage = tracker.get_all()
+    final_totals = tracker.totals()
+    final_models = tracker.get_models()
+
+    run_log["token_usage"] = {
+        agent: {
+            "model": final_models.get(agent),
+            "input_tokens": data.input_tokens,
+            "output_tokens": data.output_tokens,
+            "total_tokens": data.total_tokens,
+            "calls": data.calls,
+            "estimated_cost_usd": round(data.estimated_cost, 8),
+        }
+        for agent, data in final_usage.items()
+    }
+
+    run_log["token_totals"] = {
+        "input_tokens": final_totals.input_tokens,
+        "output_tokens": final_totals.output_tokens,
+        "total_tokens": final_totals.total_tokens,
+        "calls": final_totals.calls,
+        "estimated_cost_usd": round(final_totals.estimated_cost, 8),
+    }
+
+    events.emit(
+        "TEAM_TELEMETRY",
+        phase="Complete" if run_log["status"] == "passed" else "Failed",
+        run_number=run_number,
+        result=run_log["status"],
+        source_files=source_file_count,
+        test_files=test_file_count,
+    )
+
+    events.emit(
+        "TEAM_LOG",
+        message=(
+            f"Run #{run_number} complete — "
+            f"{final_totals.total_tokens:,} tokens, "
+            f"{final_totals.calls} API calls, "
+            f"${final_totals.estimated_cost:.6f} estimated cost."
+        ),
+    )
+
+    # Keep the traditional latest-run log for compatibility.
+    run_log_path = workspace / "run_log.json"
+    run_log_path.write_text(json.dumps(run_log, indent=2))
+
+    # Persist an immutable per-run copy for `team replay`.
+    replay_dir = workspace / ".team" / "runs"
+    replay_dir.mkdir(parents=True, exist_ok=True)
+
+    replay_path = replay_dir / f"{run_number}.json"
+    replay_path.write_text(json.dumps(run_log, indent=2))
+    events.emit(
+        "TEAM_COMPLETED",
+        message=run_log["status"],
+    )
+
+    dashboard.stop()
+
+    return run_log
+
+
+if __name__ == "__main__":
+    task_description = " ".join(sys.argv[1:]) or input("Describe what you want the team to build: ")
+    run_team(task_description)
+    log("Done. See workspace/ for the code and workspace/run_log.json for the full transcript.")
