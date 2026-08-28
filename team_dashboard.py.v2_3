@@ -45,7 +45,6 @@ class Dashboard:
         self.run_number = None
         self.task = ""
         self.completed = False
-        self.completion_status = ""
         self.progress = 0
         self.telemetry = {
             "phase": "Starting",
@@ -77,7 +76,6 @@ class Dashboard:
             self.status = {agent: "WAITING" for agent in AGENTS}
             self.messages = {agent: "" for agent in AGENTS}
             self.completed = False
-            self.completion_status = ""
             self.progress = 0
             self.telemetry = {
                 "phase": "Starting",
@@ -130,22 +128,17 @@ class Dashboard:
         if self.completed:
             totals = tracker.totals()
 
-            success = self.completion_status == "passed"
-            symbol = "✓" if success else "✗"
-            result = "complete" if success else "finished with failures"
-            color = "1;92" if success else "1;91"
-
             summary = (
-                f"{symbol} AI DEV TEAM — Run "
+                f"✓ AI DEV TEAM — Run "
                 f"{self.run_number if self.run_number is not None else '?'} "
-                f"{result} | "
+                f"complete | "
                 f"{totals.total_tokens:,} tokens | "
                 f"{totals.calls} API calls | "
                 f"${totals.estimated_cost:.6f}"
             )
 
             print(
-                self._paint(summary, color),
+                self._paint(summary, "1;92"),
                 flush=True,
             )
 
@@ -247,13 +240,7 @@ class Dashboard:
                 self.running = False
                 self.current_agent = None
                 self.completed = True
-                self.completion_status = event.message or "completed"
                 self.progress = 100
-
-                # Agents that were never needed should not look unfinished.
-                for agent, status in self.status.items():
-                    if status == "WAITING":
-                        self.status[agent] = "SKIPPED"
 
         # Rendering is intentionally controlled by the dashboard
         # refresh mechanism instead of every individual event.
@@ -277,7 +264,6 @@ class Dashboard:
             "WORKING": "●",
             "DONE": "✓",
             "FAILED": "✗",
-            "SKIPPED": "–",
         }.get(status, "?")
 
     def _fit(self, text, width):
@@ -307,7 +293,6 @@ class Dashboard:
             "WORKING": "1;96",     # bold cyan
             "DONE": "1;92",        # bold green
             "FAILED": "1;91",      # bold red
-            "SKIPPED": "2;37",     # dim white
         }.get(status, "0")
 
     def _progress_bar(self, width):
@@ -343,7 +328,6 @@ class Dashboard:
             activity = list(self.activity)
             task = self.task
             completed = self.completed
-            completion_status = self.completion_status
             progress = self.progress
             telemetry = dict(self.telemetry)
 
@@ -471,7 +455,7 @@ class Dashboard:
             current_line_1 = " No agent currently generating."
             current_line_2 = ""
 
-        stage = telemetry.get("phase") or self._stage_name(current)
+        stage = self._stage_name(current)
 
         bar_room = max(12, right_width - 16)
         bar = self._progress_bar(bar_room)
@@ -481,14 +465,7 @@ class Dashboard:
             f" {bar} {progress:>3}%",
         )
 
-        if completed:
-            progress_color = (
-                "1;92"
-                if completion_status == "passed"
-                else "1;91"
-            )
-        else:
-            progress_color = "1;96"
+        progress_color = "1;92" if completed else "1;96"
 
         progress_row = progress_row.replace(
             bar,
@@ -562,15 +539,7 @@ class Dashboard:
             )
 
         if completed:
-            success = completion_status == "passed"
-
-            if success:
-                banner = "✓ BUILD COMPLETE"
-                banner_color = "1;92"
-            else:
-                banner = "✗ BUILD FINISHED WITH FAILURES"
-                banner_color = "1;91"
-
+            banner = "✓ BUILD COMPLETE"
             padding = max(0, (inner - len(banner)) // 2)
 
             lines.extend(
@@ -578,7 +547,7 @@ class Dashboard:
                     divider,
                     full_row(
                         " " * padding
-                        + self._paint(banner, banner_color)
+                        + self._paint(banner, "1;92")
                     ),
                 ]
             )

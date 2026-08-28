@@ -1,67 +1,67 @@
 [
   {
     "run": 1,
-    "timestamp": "2026-08-28T18:27:43.215954+00:00",
+    "timestamp": "2026-08-28T19:08:33.246949+00:00",
     "usage": {
       "agents": {
         "Researcher": {
-          "input_tokens": 611,
-          "output_tokens": 699,
-          "total_tokens": 1310,
+          "input_tokens": 996,
+          "output_tokens": 844,
+          "total_tokens": 1840,
           "calls": 1,
-          "estimated_cost": 0.000255525,
+          "estimated_cost": 0.00032789999999999995,
           "model": "openai/gpt-oss-20b"
         },
         "Architect": {
-          "input_tokens": 816,
-          "output_tokens": 1237,
-          "total_tokens": 2053,
+          "input_tokens": 966,
+          "output_tokens": 1516,
+          "total_tokens": 2482,
           "calls": 1,
-          "estimated_cost": 0.0008646000000000001,
+          "estimated_cost": 0.0010544999999999999,
           "model": "openai/gpt-oss-120b"
         },
         "Developer": {
-          "input_tokens": 2980,
-          "output_tokens": 2591,
-          "total_tokens": 5571,
+          "input_tokens": 6020,
+          "output_tokens": 6111,
+          "total_tokens": 12131,
           "calls": 3,
-          "estimated_cost": 0.0020016,
+          "estimated_cost": 0.0045696,
           "model": "openai/gpt-oss-120b"
         },
         "Reviewer": {
-          "input_tokens": 1314,
+          "input_tokens": 4068,
           "output_tokens": 4096,
-          "total_tokens": 5410,
+          "total_tokens": 8164,
           "calls": 2,
-          "estimated_cost": 0.00132735,
+          "estimated_cost": 0.0015339,
           "model": "openai/gpt-oss-20b"
         },
         "Security": {
-          "input_tokens": 715,
-          "output_tokens": 169,
-          "total_tokens": 884,
+          "input_tokens": 2679,
+          "output_tokens": 203,
+          "total_tokens": 2882,
           "calls": 1,
-          "estimated_cost": 0.000104325,
+          "estimated_cost": 0.000261825,
           "model": "openai/gpt-oss-20b"
         },
         "Tester": {
-          "input_tokens": 896,
+          "input_tokens": 2860,
           "output_tokens": 2048,
-          "total_tokens": 2944,
+          "total_tokens": 4908,
           "calls": 1,
-          "estimated_cost": 0.0006816,
+          "estimated_cost": 0.0008289,
           "model": "openai/gpt-oss-20b"
         }
       },
       "totals": {
-        "input_tokens": 7332,
-        "output_tokens": 10840,
-        "total_tokens": 18172,
+        "input_tokens": 17589,
+        "output_tokens": 14818,
+        "total_tokens": 32407,
         "calls": 9,
-        "estimated_cost": 0.005235
+        "estimated_cost": 0.008576625
       }
     },
-    "total_tokens": 18172,
-    "estimated_cost": 0.005235
+    "total_tokens": 32407,
+    "estimated_cost": 0.008576625
   }
 ]

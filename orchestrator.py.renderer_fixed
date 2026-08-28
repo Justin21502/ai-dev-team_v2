@@ -232,11 +232,6 @@ IMPORTANT FILE RULES:
 """
     )
     written_paths = _apply_agent_files(dev_output, workspace_dir, [])
-    events.emit(
-        "TEAM_TELEMETRY",
-        phase="Development",
-        source_files=len(written_paths),
-    )
     run_log["steps"].append({"agent": "Developer", "output": dev_output, "files": written_paths})
     show_usage("Developer")
     if not written_paths:
@@ -244,12 +239,6 @@ IMPORTANT FILE RULES:
 
     # 3. Code review loop.
     for i in range(1, MAX_REVIEW_ITERATIONS + 1):
-        events.emit(
-            "TEAM_TELEMETRY",
-            phase="Code Review",
-            review_round=i,
-            review_max=MAX_REVIEW_ITERATIONS,
-        )
         log(f"Reviewer round {i}...")
         review = reviewer.say(f"Task:\n{task}\n\nReview this code:\n\n{_safe_context(written_paths, workspace_dir)}")
         run_log["steps"].append({"agent": "Reviewer", "round": i, "output": review})
@@ -265,21 +254,11 @@ IMPORTANT FILE RULES:
             "Revise the code. Re-output the COMPLETE contents of every file that needs a change."
         )
         written_paths = _apply_agent_files(dev_output, workspace_dir, written_paths)
-        events.emit(
-            "TEAM_TELEMETRY",
-            source_files=len(written_paths),
-        )
         run_log["steps"].append({"agent": "Developer", "round": i, "output": dev_output, "files": written_paths})
         show_usage("Developer")
 
     # 4. Security review loop.
     for i in range(1, MAX_SECURITY_ITERATIONS + 1):
-        events.emit(
-            "TEAM_TELEMETRY",
-            phase="Security Review",
-            security_round=i,
-            security_max=MAX_SECURITY_ITERATIONS,
-        )
         log(f"Security review round {i}...")
         sec_review = security.say(
             f"Task:\n{task}\n\nReview this code for security issues:\n\n{_safe_context(written_paths, workspace_dir)}"
@@ -332,13 +311,6 @@ IMPORTANT TESTING RULES:
         for path in test_paths
     }
 
-    events.emit(
-        "TEAM_TELEMETRY",
-        phase="Testing",
-        test_files=len(test_paths),
-        test_max=MAX_TEST_ITERATIONS,
-    )
-
     run_log["steps"].append({
         "agent": "Tester",
         "output": test_output,
@@ -349,14 +321,6 @@ IMPORTANT TESTING RULES:
     # 6. Run tests for real and repair failures.
     final_test_result = None
     for i in range(1, MAX_TEST_ITERATIONS + 1):
-        events.emit(
-            "TEAM_TELEMETRY",
-            phase="Testing",
-            test_attempt=i,
-            test_max=MAX_TEST_ITERATIONS,
-            pytest_status="RUNNING",
-            pytest_summary="pytest is running...",
-        )
         log(f"Running pytest (attempt {i})...")
         result = subprocess.run(
             [sys.executable, "-m", "pytest", "-q"],
@@ -367,24 +331,6 @@ IMPORTANT TESTING RULES:
         )
         passed = result.returncode == 0
         final_test_result = result
-
-        output_lines = [
-            line.strip()
-            for line in result.stdout.splitlines()
-            if line.strip()
-        ]
-        pytest_summary = (
-            output_lines[-1]
-            if output_lines
-            else f"pytest exited with code {result.returncode}"
-        )
-
-        events.emit(
-            "TEAM_TELEMETRY",
-            pytest_status="PASSED" if passed else "FAILED",
-            pytest_summary=pytest_summary,
-        )
-
         run_log["steps"].append({
             "agent": "Orchestrator",
             "action": "pytest",
@@ -422,11 +368,6 @@ IMPORTANT TESTING RULES:
         log("Max test iterations reached; tests still failing.")
 
     run_log["status"] = "passed" if final_test_result and final_test_result.returncode == 0 else "tests_failed"
-
-    events.emit(
-        "TEAM_TELEMETRY",
-        phase="Complete" if run_log["status"] == "passed" else "Failed",
-    )
 
     # Save final token usage into the run log.
     final_usage = tracker.get_all()

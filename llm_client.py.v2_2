@@ -191,10 +191,6 @@ def chat(
 
                 # Send generation status to the dashboard.
                 events.emit(
-                    "TEAM_TELEMETRY",
-                    current_model=candidate,
-                )
-                events.emit(
                     "TEAM_LOG",
                     agent=agent_name,
                     message=f"{candidate} is generating",
