@@ -63,5 +63,78 @@
     },
     "total_tokens": 32407,
     "estimated_cost": 0.008576625
+  },
+  {
+    "run": 2,
+    "timestamp": "2026-08-28T19:57:36.717864+00:00",
+    "usage": {
+      "agents": {
+        "Researcher": {
+          "input_tokens": 1183,
+          "output_tokens": 1019,
+          "total_tokens": 2202,
+          "calls": 1,
+          "estimated_cost": 0.00039442499999999995,
+          "model": "openai/gpt-oss-20b"
+        },
+        "Architect": {
+          "input_tokens": 1034,
+          "output_tokens": 1774,
+          "total_tokens": 2808,
+          "calls": 1,
+          "estimated_cost": 0.0012194999999999999,
+          "model": "openai/gpt-oss-120b"
+        },
+        "Developer": {
+          "input_tokens": 6891,
+          "output_tokens": 4880,
+          "total_tokens": 11771,
+          "calls": 3,
+          "estimated_cost": 0.00396165,
+          "model": "openai/gpt-oss-120b"
+        },
+        "Reviewer": {
+          "input_tokens": 4677,
+          "output_tokens": 4096,
+          "total_tokens": 8773,
+          "calls": 2,
+          "estimated_cost": 0.0015795749999999997,
+          "model": "openai/gpt-oss-20b"
+        },
+        "Security": {
+          "input_tokens": 2533,
+          "output_tokens": 1004,
+          "total_tokens": 3537,
+          "calls": 1,
+          "estimated_cost": 0.0004911749999999999,
+          "model": "openai/gpt-oss-20b"
+        },
+        "Tester": {
+          "input_tokens": 2714,
+          "output_tokens": 2048,
+          "total_tokens": 4762,
+          "calls": 1,
+          "estimated_cost": 0.00081795,
+          "model": "openai/gpt-oss-20b"
+        }
+      },
+      "totals": {
+        "input_tokens": 19032,
+        "output_tokens": 14821,
+        "total_tokens": 33853,
+        "calls": 9,
+        "estimated_cost": 0.008464274999999999
+      }
+    },
+    "total_tokens": 33853,
+    "estimated_cost": 0.008464274999999999,
+    "task": "Build a simple Python command-line temperature converter that converts Celsius to Fahrenheit and Fahrenheit to Celsius. Include input validation and pytest tests.",
+    "result": "passed",
+    "pytest_summary": ".................                                                        [100%]",
+    "source_files": 9,
+    "test_files": 0,
+    "review_rounds": 2,
+    "security_rounds": 1,
+    "test_attempts": 1
   }
 ]

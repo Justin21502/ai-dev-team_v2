@@ -1,0 +1,23 @@
+[project]
+name = "temperature_converter"
+version = "0.1.0"
+description = "A simple CLI for converting temperatures between Celsius and Fahrenheit."
+readme = "README.md"
+requires-python = ">=3.8"
+license = {text = "MIT"}
+authors = [
+    {name = "Your Name", email = "you@example.com"},
+]
+keywords = ["temperature", "converter", "cli"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+
+[project.scripts]
+temp-convert = "temperature_converter.cli:main"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra -q"

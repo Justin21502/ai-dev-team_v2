@@ -1,0 +1,564 @@
+"""Manager for the AI Dev Team.
+
+Workflow:
+  Researcher -> Architect -> Developer -> Review -> Security -> Tester
+             -> real pytest -> Developer/Debugger fixes
+
+The team is deliberately simple and transparent so it works well in a
+GitHub Codespace without a framework or paid orchestration service.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import subprocess
+import sys
+from datetime import datetime, timezone
+from pathlib import Path
+
+from agents import (
+    make_architect,
+    make_debugger,
+    make_developer,
+    make_researcher,
+    make_reviewer,
+    make_security,
+    make_tester,
+)
+from file_utils import extract_files, read_files_as_text, write_files
+from llm_client import FAST_MODEL, PRIMARY_MODEL
+from usage_tracker import tracker
+from team_dashboard import dashboard
+from team_events import events
+from web_search import search_many
+
+MAX_REVIEW_ITERATIONS = int(os.environ.get("MAX_REVIEW_ITERATIONS", "2"))
+MAX_SECURITY_ITERATIONS = int(os.environ.get("MAX_SECURITY_ITERATIONS", "1"))
+MAX_TEST_ITERATIONS = int(os.environ.get("MAX_TEST_ITERATIONS", "3"))
+ENABLE_RESEARCH = os.environ.get("ENABLE_RESEARCH", "true").lower() != "false"
+
+# Stronger model for planning/coding/debugging; faster model for judging and
+# research. These can all be overridden independently in .env.
+MODEL_RESEARCHER = os.environ.get("AI_TEAM_RESEARCHER_MODEL", FAST_MODEL)
+MODEL_ARCHITECT = os.environ.get("AI_TEAM_ARCHITECT_MODEL", PRIMARY_MODEL)
+MODEL_DEVELOPER = os.environ.get("AI_TEAM_DEVELOPER_MODEL", PRIMARY_MODEL)
+MODEL_REVIEWER = os.environ.get("AI_TEAM_REVIEWER_MODEL", FAST_MODEL)
+MODEL_SECURITY = os.environ.get("AI_TEAM_SECURITY_MODEL", FAST_MODEL)
+MODEL_TESTER = os.environ.get("AI_TEAM_TESTER_MODEL", FAST_MODEL)
+MODEL_DEBUGGER = os.environ.get("AI_TEAM_DEBUGGER_MODEL", PRIMARY_MODEL)
+
+
+def log(msg: str):
+    events.emit("TEAM_LOG", message=msg)
+
+
+def show_usage(current_agent: str | None = None):
+    """Compatibility hook; live usage is rendered by the dashboard."""
+    return
+
+
+def _safe_context(paths: list[str], workspace_dir: str) -> str:
+    """Read generated files, returning a useful message when none exist."""
+    if not paths:
+        return "(No generated files are currently available.)"
+    return read_files_as_text(paths)
+
+
+def _apply_agent_files(
+    output: str,
+    workspace_dir: str,
+    existing: list[str],
+    protected_paths: set[str] | None = None,
+) -> list[str]:
+    """
+    Apply files emitted by an agent while protecting selected files.
+
+    The filesystem layer handles path normalization and traversal protection.
+    This layer additionally prevents repair agents from modifying protected
+    files such as the test suite.
+    """
+    files = extract_files(output)
+
+    if not files:
+        return existing
+
+    protected_paths = protected_paths or set()
+
+    # Normalize protected paths to absolute paths so comparisons are reliable.
+    workspace = Path(workspace_dir).resolve()
+    protected_absolute = set()
+
+    for path in protected_paths:
+        protected_absolute.add(str((workspace / path).resolve()))
+
+    safe_files = {}
+
+    for rel_path, content in files.items():
+        normalized = rel_path.replace("\\", "/").lstrip("/")
+
+        # Agents sometimes include the workspace directory in their paths.
+        workspace_name = workspace.name
+        prefix = workspace_name + "/"
+
+        if normalized.startswith(prefix):
+            normalized = normalized[len(prefix):]
+
+        candidate = (workspace / normalized).resolve()
+
+        # Never allow an agent to overwrite a protected file.
+        if str(candidate) in protected_absolute:
+            log(f"Protected file skipped: {normalized}")
+            continue
+
+        safe_files[normalized] = content
+
+    if not safe_files:
+        return existing
+
+    written = write_files(safe_files, workspace_dir)
+    return list(dict.fromkeys(existing + written))
+
+
+def _clean_workspace(workspace_dir: str):
+    """Remove the previous generated project before starting a new run."""
+    workspace = Path(workspace_dir).resolve()
+    project_root = Path(__file__).resolve().parent
+
+    # Never allow the generated-project cleanup to delete the AI Dev Team
+    # itself. The workspace must be a child directory of the team project.
+    if workspace == project_root:
+        raise RuntimeError(
+            "Refusing to clean the AI Dev Team root directory. "
+            "Generated workspaces must be inside the team project."
+        )
+
+    try:
+        workspace.relative_to(project_root)
+    except ValueError:
+        raise RuntimeError(
+            f"Refusing to clean workspace outside the AI Dev Team: {workspace}"
+        )
+
+    if workspace.exists():
+        for child in workspace.iterdir():
+            # Persistent AI Dev Team history must survive project cleanup.
+            if child.name == "run_history.json":
+                continue
+
+            if child.is_dir():
+                import shutil
+                shutil.rmtree(child)
+            else:
+                child.unlink()
+
+    workspace.mkdir(parents=True, exist_ok=True)
+
+
+def run_team(task: str, workspace_dir: str = "workspace"):
+    # Each team invocation gets its own token accounting.
+    tracker.reset()
+
+    events.emit(
+        "TEAM_STARTED",
+        message=task,
+    )
+
+    dashboard.start()
+
+    workspace = Path(workspace_dir)
+    _clean_workspace(workspace_dir)
+    run_log = {
+        "task": task,
+        "models": {
+            "researcher": MODEL_RESEARCHER,
+            "architect": MODEL_ARCHITECT,
+            "developer": MODEL_DEVELOPER,
+            "reviewer": MODEL_REVIEWER,
+            "security": MODEL_SECURITY,
+            "tester": MODEL_TESTER,
+            "debugger": MODEL_DEBUGGER,
+        },
+        "steps": [],
+    }
+
+    researcher = make_researcher(MODEL_RESEARCHER)
+    architect = make_architect(MODEL_ARCHITECT)
+    developer = make_developer(MODEL_DEVELOPER)
+    reviewer = make_reviewer(MODEL_REVIEWER)
+    security = make_security(MODEL_SECURITY)
+    tester = make_tester(MODEL_TESTER)
+    debugger = make_debugger(MODEL_DEBUGGER)
+
+    # 0. Research. Web-search failure is non-fatal.
+    research_notes = ""
+    if ENABLE_RESEARCH:
+        log("Researcher is searching the web...")
+        raw_results = search_many([task, f"{task} best practices"], max_results_each=3)
+        research_notes = researcher.say(
+            f"Task:\n{task}\n\nRaw web search results:\n{raw_results}\n\n"
+            "Summarize only useful, supported information for the Architect and Developer."
+        )
+        run_log["steps"].append({"agent": "Researcher", "output": research_notes})
+        show_usage("Researcher")
+        log("Research notes ready.")
+
+    # 1. Architect.
+    log("Architect is planning...")
+    plan = architect.say(
+        f"Task:\n{task}\n\n"
+        + (f"Research notes:\n{research_notes}\n\n" if research_notes else "")
+        + "Produce a short implementation plan."
+    )
+    run_log["steps"].append({"agent": "Architect", "output": plan})
+    show_usage("Architect")
+    log("Plan ready.")
+
+    # 2. Developer first pass.
+    log("Developer is writing the first draft...")
+    dev_output = developer.say(
+        f"""Task:
+{task}
+
+Architect's plan:
+{plan}
+
+IMPORTANT FILE RULES:
+- The current workspace directory is the project root.
+- All FILE paths must be relative to the project root.
+- Never prefix file paths with "workspace/".
+- Example: src/main.py
+- Example: tests/test_main.py
+- Never create workspace/workspace/... paths.
+- Do not use absolute paths.
+- Do not use ../ paths.
+- Write the code now, following the FILE format exactly.
+"""
+    )
+    written_paths = _apply_agent_files(dev_output, workspace_dir, [])
+    events.emit(
+        "TEAM_TELEMETRY",
+        phase="Development",
+        source_files=len(written_paths),
+    )
+    run_log["steps"].append({"agent": "Developer", "output": dev_output, "files": written_paths})
+    show_usage("Developer")
+    if not written_paths:
+        raise RuntimeError("Developer response contained no parseable FILE blocks; cannot continue safely.")
+
+    # 3. Code review loop.
+    for i in range(1, MAX_REVIEW_ITERATIONS + 1):
+        events.emit(
+            "TEAM_TELEMETRY",
+            phase="Code Review",
+            review_round=i,
+            review_max=MAX_REVIEW_ITERATIONS,
+        )
+        log(f"Reviewer round {i}...")
+        review = reviewer.say(f"Task:\n{task}\n\nReview this code:\n\n{_safe_context(written_paths, workspace_dir)}")
+        run_log["steps"].append({"agent": "Reviewer", "round": i, "output": review})
+        show_usage("Reviewer")
+        if review.strip().upper().startswith("APPROVED"):
+            log("Reviewer approved the code.")
+            break
+
+        log("Reviewer requested changes. Sending back to Developer...")
+        dev_output = developer.say(
+            f"Task:\n{task}\n\nCurrent code:\n{_safe_context(written_paths, workspace_dir)}\n\n"
+            f"Reviewer feedback:\n{review}\n\n"
+            "Revise the code. Re-output the COMPLETE contents of every file that needs a change."
+        )
+        written_paths = _apply_agent_files(dev_output, workspace_dir, written_paths)
+        events.emit(
+            "TEAM_TELEMETRY",
+            source_files=len(written_paths),
+        )
+        run_log["steps"].append({"agent": "Developer", "round": i, "output": dev_output, "files": written_paths})
+        show_usage("Developer")
+
+    # 4. Security review loop.
+    for i in range(1, MAX_SECURITY_ITERATIONS + 1):
+        events.emit(
+            "TEAM_TELEMETRY",
+            phase="Security Review",
+            security_round=i,
+            security_max=MAX_SECURITY_ITERATIONS,
+        )
+        log(f"Security review round {i}...")
+        sec_review = security.say(
+            f"Task:\n{task}\n\nReview this code for security issues:\n\n{_safe_context(written_paths, workspace_dir)}"
+        )
+        run_log["steps"].append({"agent": "Security", "round": i, "output": sec_review})
+        show_usage("Security")
+        if sec_review.strip().upper().startswith("APPROVED"):
+            log("Security review approved the code.")
+            break
+
+        log("Security review found issues. Sending back to Developer...")
+        dev_output = developer.say(
+            f"Task:\n{task}\n\nCurrent code:\n{_safe_context(written_paths, workspace_dir)}\n\n"
+            f"Security feedback:\n{sec_review}\n\n"
+            "Fix the issues and re-output the COMPLETE contents of every file that needs a change."
+        )
+        written_paths = _apply_agent_files(dev_output, workspace_dir, written_paths)
+        run_log["steps"].append({"agent": "Developer", "round": i, "output": dev_output, "files": written_paths})
+        show_usage("Developer")
+
+    # 5. Tester writes tests.
+    log("Tester is writing tests...")
+    test_output = tester.say(
+        f"""Task:
+{task}
+
+Code to test:
+
+{_safe_context(written_paths, workspace_dir)}
+
+IMPORTANT TESTING RULES:
+- The current workspace directory is the project root.
+- All FILE paths must be relative to the project root.
+- Never prefix paths with "workspace/".
+- Create or update TEST files only.
+- Do not modify application/source files.
+- Test files should normally live under tests/.
+- Follow the existing project structure when adding tests.
+"""
+    )
+
+    test_files = extract_files(test_output)
+
+    # Tester owns the test suite. These files become protected from all
+    # subsequent Developer/Debugger repair attempts.
+    test_paths = write_files(test_files, workspace_dir)
+
+    protected_test_paths = {
+        str(Path(path).resolve())
+        for path in test_paths
+    }
+
+    events.emit(
+        "TEAM_TELEMETRY",
+        phase="Testing",
+        test_files=len(test_paths),
+        test_max=MAX_TEST_ITERATIONS,
+    )
+
+    run_log["steps"].append({
+        "agent": "Tester",
+        "output": test_output,
+        "files": test_paths,
+    })
+    show_usage("Tester")
+
+    # 6. Run tests for real and repair failures.
+    final_test_result = None
+    for i in range(1, MAX_TEST_ITERATIONS + 1):
+        events.emit(
+            "TEAM_TELEMETRY",
+            phase="Testing",
+            test_attempt=i,
+            test_max=MAX_TEST_ITERATIONS,
+            pytest_status="RUNNING",
+            pytest_summary="pytest is running...",
+        )
+        log(f"Running pytest (attempt {i})...")
+        result = subprocess.run(
+            [sys.executable, "-m", "pytest", "-q"],
+            cwd=workspace_dir,
+            capture_output=True,
+            text=True,
+            timeout=int(os.environ.get("PYTEST_TIMEOUT_SECONDS", "120")),
+        )
+        passed = result.returncode == 0
+        final_test_result = result
+
+        output_lines = [
+            line.strip()
+            for line in result.stdout.splitlines()
+            if line.strip()
+        ]
+        pytest_summary = (
+            output_lines[-1]
+            if output_lines
+            else f"pytest exited with code {result.returncode}"
+        )
+
+        events.emit(
+            "TEAM_TELEMETRY",
+            pytest_status="PASSED" if passed else "FAILED",
+            pytest_summary=pytest_summary,
+        )
+
+        run_log["steps"].append({
+            "agent": "Orchestrator",
+            "action": "pytest",
+            "attempt": i,
+            "passed": passed,
+            "stdout": result.stdout[-6000:],
+            "stderr": result.stderr[-3000:],
+        })
+        if passed:
+            log("All tests passed.")
+            break
+
+        fixer, fixer_name = (developer, "Developer") if i == 1 else (debugger, "Debugger")
+        log(f"Tests failed. Sending failure output to {fixer_name}...")
+        fix_output = fixer.say(
+            f"Task:\n{task}\n\nCurrent application code:\n{_safe_context(written_paths, workspace_dir)}\n\n"
+            f"pytest output:\n{result.stdout}\n{result.stderr}\n\n"
+            "Fix the application code (not the tests) so the tests pass. "
+            "Re-output the COMPLETE contents of every application file you change."
+        )
+        written_paths = _apply_agent_files(
+            fix_output,
+            workspace_dir,
+            written_paths,
+            protected_test_paths,
+        )
+        run_log["steps"].append({
+            "agent": fixer_name,
+            "round": i,
+            "output": fix_output,
+            "files": written_paths,
+        })
+        show_usage(fixer_name)
+    else:
+        log("Max test iterations reached; tests still failing.")
+
+    run_log["status"] = "passed" if final_test_result and final_test_result.returncode == 0 else "tests_failed"
+
+    events.emit(
+        "TEAM_TELEMETRY",
+        phase="Complete" if run_log["status"] == "passed" else "Failed",
+    )
+
+    # Build a compact persistent history record.
+    review_rounds = max(
+        (
+            int(step.get("round", 0))
+            for step in run_log["steps"]
+            if step.get("agent") == "Reviewer"
+        ),
+        default=0,
+    )
+
+    security_rounds = max(
+        (
+            int(step.get("round", 0))
+            for step in run_log["steps"]
+            if step.get("agent") == "Security"
+        ),
+        default=0,
+    )
+
+    test_attempts = max(
+        (
+            int(step.get("attempt", 0))
+            for step in run_log["steps"]
+            if step.get("action") == "pytest"
+        ),
+        default=0,
+    )
+
+    pytest_summary = ""
+
+    if final_test_result is not None:
+        stdout_lines = [
+            line.strip()
+            for line in final_test_result.stdout.splitlines()
+            if line.strip()
+        ]
+        stderr_lines = [
+            line.strip()
+            for line in final_test_result.stderr.splitlines()
+            if line.strip()
+        ]
+
+        if stdout_lines:
+            pytest_summary = stdout_lines[-1]
+        elif stderr_lines:
+            pytest_summary = stderr_lines[-1]
+
+    # Save this run to persistent history.
+    run_number = tracker.save_history(
+        str(workspace / "run_history.json"),
+        metadata={
+            "task": task,
+            "result": run_log["status"],
+            "pytest_summary": pytest_summary,
+            "source_files": len(written_paths),
+            "test_files": len(test_paths),
+            "review_rounds": review_rounds,
+            "security_rounds": security_rounds,
+            "test_attempts": test_attempts,
+        },
+    )
+
+    run_log["run_number"] = run_number
+    run_log["pytest_summary"] = pytest_summary
+    run_log["source_files"] = len(written_paths)
+    run_log["test_files"] = len(test_paths)
+    run_log["review_rounds"] = review_rounds
+    run_log["security_rounds"] = security_rounds
+    run_log["test_attempts"] = test_attempts
+
+    final_usage = tracker.get_all()
+    final_totals = tracker.totals()
+    final_models = tracker.get_models()
+
+    run_log["token_usage"] = {
+        agent: {
+            "model": final_models.get(agent),
+            "input_tokens": data.input_tokens,
+            "output_tokens": data.output_tokens,
+            "total_tokens": data.total_tokens,
+            "calls": data.calls,
+            "estimated_cost_usd": round(data.estimated_cost, 8),
+        }
+        for agent, data in final_usage.items()
+    }
+
+    run_log["token_totals"] = {
+        "input_tokens": final_totals.input_tokens,
+        "output_tokens": final_totals.output_tokens,
+        "total_tokens": final_totals.total_tokens,
+        "calls": final_totals.calls,
+        "estimated_cost_usd": round(final_totals.estimated_cost, 8),
+    }
+
+    events.emit(
+        "TEAM_TELEMETRY",
+        phase="Complete" if run_log["status"] == "passed" else "Failed",
+        run_number=run_number,
+        result=run_log["status"],
+        source_files=len(written_paths),
+        test_files=len(test_paths),
+    )
+
+    events.emit(
+        "TEAM_LOG",
+        message=(
+            f"Run #{run_number} complete — "
+            f"{final_totals.total_tokens:,} tokens, "
+            f"{final_totals.calls} API calls, "
+            f"${final_totals.estimated_cost:.6f} estimated cost."
+        ),
+    )
+
+    (workspace / "run_log.json").write_text(
+        json.dumps(run_log, indent=2)
+    )
+    events.emit(
+        "TEAM_COMPLETED",
+        message=run_log["status"],
+    )
+
+    dashboard.stop()
+
+    return run_log
+
+
+if __name__ == "__main__":
+    task_description = " ".join(sys.argv[1:]) or input("Describe what you want the team to build: ")
+    run_team(task_description)
+    log("Done. See workspace/ for the code and workspace/run_log.json for the full transcript.")

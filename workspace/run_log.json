@@ -1,0 +1,160 @@
+{
+  "task": "Build a simple Python command-line temperature converter that converts Celsius to Fahrenheit and Fahrenheit to Celsius. Include input validation and pytest tests.",
+  "models": {
+    "researcher": "openai/gpt-oss-20b",
+    "architect": "openai/gpt-oss-120b",
+    "developer": "openai/gpt-oss-120b",
+    "reviewer": "openai/gpt-oss-20b",
+    "security": "openai/gpt-oss-20b",
+    "tester": "openai/gpt-oss-20b",
+    "debugger": "openai/gpt-oss-120b"
+  },
+  "steps": [
+    {
+      "agent": "Researcher",
+      "output": "**Quick\u2011Start Notes for the Temperature Converter CLI**\n\n| Topic | Practical Take\u2011aways | Source |\n|-------|----------------------|--------|\n| **Core formulas** | \u2022\u202f\u00b0C \u2192\u202f\u00b0F: `F = C * 9/5 + 32`  <br>\u2022\u202f\u00b0F \u2192\u202f\u00b0C: `C = (F \u2013 32) * 5/9` | https://www.justanswer.com/computer-programming/mv19z-simple-temperature-converter-create-python-program.html |\n| **Input validation** | \u2022\u202fWrap `float(input(...))` in `try/except ValueError` to catch non\u2011numeric strings. <br>\u2022\u202fNormalize unit suffix (`C`/`F`) with `.upper()` and reject unknown units. <br>\u2022\u202fOptionally enforce a numeric range (e.g., avoid absurd values). | https://www.w3resource.com/python-exercises/python-conditional-exercise-2.php |\n| **CLI parsing** | \u2022\u202fUse the standard `argparse` module (no external deps). <br>\u2022\u202fDefine `--from-unit`, `--to-unit`, and `--temperature` arguments. <br>\u2022\u202fProvide helpful `--help` text and type validation. | https://proactiveprogrammers.com/discrete-structures/programming-projects/temperature-conversion/ |\n| **Testing with pytest** | \u2022\u202fCreate a `tests/` folder and write functions like `test_c_to_f()` and `test_f_to_c()`. <br>\u2022\u202fUse `pytest.raises(ValueError)` for invalid unit tests. <br>\u2022\u202fTest edge cases: 0\u202f\u00b0C, 32\u202f\u00b0F, negative temps, large numbers. <br>\u2022\u202fKeep tests independent of I/O by testing the conversion functions directly. | https://www.py4u.org/blog/convert-celsius-to-fahrenheit-python/ |\n| **Code structure** | \u2022\u202fEncapsulate conversions in a `TemperatureConverter` class with `@staticmethod` methods (keeps namespace tidy). <br>\u2022\u202fAdd a `convert(temperature, from_unit, to_unit)` dispatcher for future unit support. <br>\u2022\u202fInclude type hints (`float`, `str`) and docstrings for clarity. | https://www.py4u.org/blog/convert-celsius-to-fahrenheit-python/ |\n| **Best practices** | \u2022\u202fAvoid integer rounding unless explicitly required; use floats for precision. <br>\u2022\u202fKeep the CLI thin: delegate logic to pure functions. <br>\u2022\u202fUse `if __name__ == \"__main__\":` guard. <br>\u2022\u202fAdd a `--version` flag via `argparse`. | https://www.w3resource.com/projects/python/python-temperature-converter-project.php |\n| **Compatibility** | \u2022\u202fPython\u202f3.8+ (type hints, f\u2011strings). <br>\u2022\u202fNo external dependencies \u2192 works in minimal environments. | All sources |\n| **Common pitfalls** | \u2022\u202fMixing integer division (`/` vs `//`) \u2192 use float division. <br>\u2022\u202fCase\u2011sensitive unit handling \u2192 normalize with `.upper()`. <br>\u2022\u202fFailing to catch `ValueError` \u2192 program crashes on bad input. <br>\u2022\u202fTesting only the CLI (e.g., `subprocess`) can be brittle; test pure functions instead. | https://www.w3resource.com/python-exercises/python-conditional-exercise-2.php |\n\n**Next Steps for the Architect & Developer**\n\n1. **Define the public API** \u2013 `TemperatureConverter.celsius_to_fahrenheit`, `fahrenheit_to_celsius`, and a generic `convert`.  \n2. **Implement CLI** with `argparse`, wiring it to the API.  \n3. **Write pytest tests** covering normal, edge, and error cases.  \n4. **Add documentation** (docstrings, README) and a `--version` flag.  \n5. **Run tests** (`pytest`) and ensure coverage >\u202f90\u202f%.  \n\nThese guidelines keep the project lightweight, testable, and future\u2011proof."
+    },
+    {
+      "agent": "Architect",
+      "output": "**Implementation Plan \u2013 Simple Temperature\u2011Converter CLI**\n\n---\n\n### 1. Repository Layout  \n\n```\ntemperature_converter/\n\u2502\n\u251c\u2500 temperature_converter/\n\u2502   \u251c\u2500 __init__.py                # expose public API\n\u2502   \u251c\u2500 core.py                    # conversion logic (class + helpers)\n\u2502   \u2514\u2500 cli.py                     # argparse entry\u2011point, thin wrapper\n\u2502\n\u251c\u2500 tests/\n\u2502   \u251c\u2500 __init__.py\n\u2502   \u2514\u2500 test_core.py               # pure\u2011function unit tests\n\u2502\n\u251c\u2500 pyproject.toml                # build metadata, pytest config, version\n\u251c\u2500 README.md                     # usage, install, test instructions\n\u2514\u2500 LICENSE\n```\n\n*If the project already has a top\u2011level package, add the new modules inside it; otherwise create the `temperature_converter` package as shown.*\n\n---\n\n### 2. Core Design ( `temperature_converter/core.py` )\n\n| Element | Decision | Rationale |\n|---------|----------|-----------|\n| **API surface** | `class TemperatureConverter` with three `@staticmethod`s: <br>\u2022 `celsius_to_fahrenheit(c: float) -> float` <br>\u2022 `fahrenheit_to_celsius(f: float) -> float` <br>\u2022 `convert(value: float, from_unit: str, to_unit: str) -> float` | Keeps namespace tidy, easy to extend to more units later. |\n| **Type hints & docstrings** | Full PEP\u2011484 hints, one\u2011line description + parameter/return docs. | Improves IDE support and makes the public contract explicit. |\n| **Error handling** | `convert` validates `from_unit`/`to_unit` after normalising with `.upper()`. Raises `ValueError` with clear message for unknown units. | Guarantees deterministic failure mode for the CLI and tests. |\n| **Precision** | Use true float division (`/`). No rounding inside the core; callers may format output. | Avoids hidden loss of precision; matches \u201ckeep floats unless rounding is required\u201d. |\n| **Future\u2011proofing** | `convert` is a dispatcher \u2013 adding Kelvin or Rankine later only requires a new static method and a mapping entry. | Keeps change\u2011impact low. |\n\n**Assumption** \u2013 No need for temperature\u2011range validation (e.g., absolute zero) because the spec only asks for \u201cinput validation\u201d of numeric type and unit.\n\n---\n\n### 3. CLI Wrapper ( `temperature_converter/cli.py` )\n\n| Feature | Implementation |\n|---------|----------------|\n| **Argument parsing** | Use `argparse.ArgumentParser`. Arguments: <br>\u2022 `--temperature` / `-t` (type\u202f`float`, required) <br>\u2022 `--from-unit` / `-f` (choices `C`, `F`, case\u2011insensitive) <br>\u2022 `--to-unit` / `-o` (choices `C`, `F`, case\u2011insensitive) <br>\u2022 `--version` (auto\u2011populated from `pyproject.toml`) |\n| **Validation** | `argparse` handles type conversion; any `ValueError` from `core.convert` is caught and re\u2011raised as `argparse.ArgumentError` so the user sees a friendly message. |\n| **Output** | Print the result with a single decimal place (e.g., `f\"{result:.2f} \u00b0F\"`). Formatting is done in the CLI, not the core. |\n| **Entry\u2011point** | Add `if __name__ == \"__main__\": main()` where `main()` parses args and calls `TemperatureConverter.convert`. |\n| **Packaging hook** | In `pyproject.toml` expose a console script: `temp-convert = \"temperature_converter.cli:main\"` so `pip install .` creates a `temp-convert` command. |\n\n---\n\n### 4. Tests ( `tests/test_core.py` )\n\n| Test group | Cases |\n|------------|-------|\n| **Correct conversions** | `celsius_to_fahrenheit(0) == 32` <br> `fahrenheit_to_celsius(32) == 0` <br> `convert(100, \"C\", \"F\")` <br> `convert(-40, \"F\", \"C\")` (where both scales coincide) |\n| **Edge values** | Very large numbers (e.g., `1e6`), very small/negative numbers, `float('inf')` (should raise `ValueError` if we decide to reject non\u2011finite). |\n| **Invalid units** | `convert(10, \"K\", \"C\")` \u2192 `ValueError` <br> `convert(10, \"C\", \"X\")` \u2192 `ValueError` |\n| **Non\u2011numeric temperature** | Directly test the static methods with a string \u2013 they are typed as `float`, so a `TypeError` is acceptable; however the CLI will already have caught this. |\n| **Case\u2011insensitivity** | `convert(0, \"c\", \"f\")` works the same as upper\u2011case. |\n| **Dispatcher correctness** | Ensure `convert` forwards to the right static method (use `pytest.raises` for unsupported combos). |\n\n*All tests call the pure functions; no subprocess or I/O is involved, keeping them fast and deterministic.*\n\n---\n\n### 5. Build / Dependency Management  \n\n| Item | Details |\n|------|---------|\n| **Python version** | `>=3.8` (type hints, f\u2011strings). |\n| **External deps** | None at runtime. Development deps: `pytest>=7`, `pytest-cov` (optional for coverage). |\n| **Packaging** | Use `pyproject.toml` with `[project]` metadata, `[tool.pytest.ini_options]` for test discovery, and `[project.scripts]` for the console entry point. |\n| **Versioning** | Single source of truth in `pyproject.toml`; expose via `--version`. |\n\n---\n\n### 6. Risks & Mitigations  \n\n| Risk | Impact | Mitigation |\n|------|--------|------------|\n| **User passes non\u2011numeric temperature via CLI** | Program crashes before conversion. | `argparse` type=`float` already raises a clear error; wrap `convert` call in a `try/except ValueError` to present a friendly message. |\n| **Unit strings are miss\u2011spelled** | `ValueError` from dispatcher. | Use `choices` in `argparse` to limit options; also normalise with `.upper()` in core for programmatic calls. |\n| **Floating\u2011point rounding surprises** | Output may show many decimal places. | CLI formats to 2 decimal places; core never rounds, preserving precision for downstream use. |\n| **Future unit expansion breaks dispatcher** | Adding new units could forget to update the mapping. | Keep the mapping in a single dictionary (`_DISPATCH = {(\"C\",\"F\"): c_to_f, ...}`) \u2013 adding a unit is a single entry change. |\n| **Test coverage falls below target** | Undetected bugs. | Include `pytest-cov` in CI, enforce `--cov-fail-under=90`. |\n\n---\n\n### 7. Timeline (rough)\n\n| Day | Deliverable |\n|-----|-------------|\n| 1   | Scaffold repo, create `core.py` with static methods and docstrings. |\n| 2   | Implement `cli.py` with argparse, version flag, console script entry. |\n| 3   | Write full test suite in `tests/test_core.py`. |\n| 4   | Add `pyproject.toml` metadata, configure pytest & coverage. |\n| 5   | Run tests, fix failures, verify >90\u202f% coverage. |\n| 6   | Write README (install, usage, test commands) and license. |\n| 7   | Final review, commit, tag version `0.1.0`. |\n\n---\n\n**Summary** \u2013 A three\u2011module design (`core`, `cli`, `__init__`) keeps conversion logic pure and easily testable, while the CLI remains a thin wrapper. No external runtime dependencies, full type\u2011hinted API, and a concise pytest suite satisfy the task requirements and leave room for future unit extensions."
+    },
+    {
+      "agent": "Developer",
+      "output": "### FILE: temperature_converter/__init__.py\n```python\n\"\"\"Top level package for temperature_converter.\n\nExports the public API for conversion utilities.\n\"\"\"\n\nfrom .core import TemperatureConverter\n\n__all__ = [\"TemperatureConverter\"]\n```\n\n### FILE: temperature_converter/core.py\n```python\n\"\"\"Core conversion logic for temperature values.\n\nProvides a small, pure\u2011Python API that can be used programmatically\nor from the command\u2011line interface.\n\"\"\"\n\nfrom __future__ import annotations\n\nimport math\nfrom typing import Final\n\n\nclass TemperatureConverter:\n    \"\"\"Utility class offering temperature conversion methods.\"\"\"\n\n    _VALID_UNITS: Final[set[str]] = {\"C\", \"F\"}\n\n    @staticmethod\n    def celsius_to_fahrenheit(celsius: float) -> float:\n        \"\"\"Convert Celsius to Fahrenheit.\n\n        Args:\n            celsius: Temperature in degrees Celsius.\n\n        Returns:\n            Temperature in degrees Fahrenheit.\n        \"\"\"\n        if not math.isfinite(celsius):\n            raise ValueError(\"Temperature must be a finite number.\")\n        return (celsius * 9.0 / 5.0) + 32.0\n\n    @staticmethod\n    def fahrenheit_to_celsius(fahrenheit: float) -> float:\n        \"\"\"Convert Fahrenheit to Celsius.\n\n        Args:\n            fahrenheit: Temperature in degrees Fahrenheit.\n\n        Returns:\n            Temperature in degrees Celsius.\n        \"\"\"\n        if not math.isfinite(fahrenheit):\n            raise ValueError(\"Temperature must be a finite number.\")\n        return (fahrenheit - 32.0) * 5.0 / 9.0\n\n    @classmethod\n    def convert(cls, value: float, from_unit: str, to_unit: str) -> float:\n        \"\"\"Convert a temperature from one unit to another.\n\n        Supported units are Celsius (``C``) and Fahrenheit (``F``).  The\n        comparison is case\u2011insensitive.\n\n        Args:\n            value: The numeric temperature to convert.\n            from_unit: Source unit, ``'C'`` or ``'F'``.\n            to_unit: Target unit, ``'C'`` or ``'F'``.\n\n        Returns:\n            The converted temperature.\n\n        Raises:\n            ValueError: If either unit is unsupported or the value is not\n                a finite number.\n        \"\"\"\n        if not math.isfinite(value):\n            raise ValueError(\"Temperature must be a finite number.\")\n\n        from_u = from_unit.upper()\n        to_u = to_unit.upper()\n\n        if from_u not in cls._VALID_UNITS:\n            raise ValueError(f\"Unsupported source unit: {from_unit!r}\")\n        if to_u not in cls._VALID_UNITS:\n            raise ValueError(f\"Unsupported target unit: {to_unit!r}\")\n\n        if from_u == to_u:\n            return value\n\n        if from_u == \"C\" and to_u == \"F\":\n            return cls.celsius_to_fahrenheit(value)\n        if from_u == \"F\" and to_u == \"C\":\n            return cls.fahrenheit_to_celsius(value)\n\n        # This point should never be reached because all combos are covered.\n        raise ValueError(f\"Conversion from {from_unit!r} to {to_unit!r} is not supported.\")\n```\n\n### FILE: temperature_converter/cli.py\n```python\n\"\"\"Command\u2011line interface for the temperature_converter package.\"\"\"\n\nfrom __future__ import annotations\n\nimport argparse\nimport sys\nfrom importlib import metadata\n\nfrom .core import TemperatureConverter\n\n\ndef _get_version() -> str:\n    \"\"\"Retrieve the package version from metadata.\"\"\"\n    try:\n        return metadata.version(\"temperature_converter\")\n    except metadata.PackageNotFoundError:\n        # Fallback for editable installs where metadata may not be present yet.\n        return \"0.0.0\"\n\n\ndef build_parser() -> argparse.ArgumentParser:\n    \"\"\"Create and configure the argument parser.\"\"\"\n    parser = argparse.ArgumentParser(\n        prog=\"temp-convert\",\n        description=\"Convert temperatures between Celsius and Fahrenheit.\",\n    )\n    parser.add_argument(\n        \"-t\",\n        \"--temperature\",\n        type=float,\n        required=True,\n        help=\"Numeric temperature value to convert.\",\n    )\n    parser.add_argument(\n        \"-f\",\n        \"--from-unit\",\n        type=str.upper,\n        choices=[\"C\", \"F\"],\n        required=True,\n        help=\"Unit of the input temperature (C or F).\",\n    )\n    parser.add_argument(\n        \"-o\",\n        \"--to-unit\",\n        type=str.upper,\n        choices=[\"C\", \"F\"],\n        required=True,\n        help=\"Desired output unit (C or F).\",\n    )\n    parser.add_argument(\n        \"--version\",\n        action=\"version\",\n        version=f\"%(prog)s {_get_version()}\",\n        help=\"Show program's version number and exit.\",\n    )\n    return parser\n\n\ndef main(argv: list[str] | None = None) -> None:\n    \"\"\"Entry point for the console script.\"\"\"\n    parser = build_parser()\n    args = parser.parse_args(argv)\n\n    try:\n        result = TemperatureConverter.convert(\n            value=args.temperature,\n            from_unit=args.from_unit,\n            to_unit=args.to_unit,\n        )\n    except ValueError as exc:\n        parser.error(str(exc))\n\n    unit_symbol = \"\u00b0C\" if args.to_unit == \"C\" else \"\u00b0F\"\n    # Two decimal places provide a clean, readable output.\n    print(f\"{result:.2f} {unit_symbol}\")\n\n\nif __name__ == \"__main__\":\n    main()\n```\n\n### FILE: tests/__init__.py\n```python\n# This file intentionally left blank to make `tests` a package.\n```\n\n### FILE: tests/test_core.py\n```python\n\"\"\"Unit tests for temperature_converter.core.\"\"\"\n\nimport math\nimport pytest\n\nfrom temperature_converter.core import TemperatureConverter\n\n\n@pytest.mark.parametrize(\n    \"celsius, expected_fahrenheit\",\n    [\n        (0, 32),\n        (100, 212),\n        (-40, -40),\n        (37, 98.6),\n    ],\n)\ndef test_celsius_to_fahrenheit(celsius, expected_fahrenheit):\n    assert math.isclose(\n        TemperatureConverter.celsius_to_fahrenheit(celsius),\n        expected_fahrenheit,\n        rel_tol=1e-9,\n    )\n\n\n@pytest.mark.parametrize(\n    \"fahrenheit, expected_celsius\",\n    [\n        (32, 0),\n        (212, 100),\n        (-40, -40),\n        (98.6, 37),\n    ],\n)\ndef test_fahrenheit_to_celsius(fahrenheit, expected_celsius):\n    assert math.isclose(\n        TemperatureConverter.fahrenheit_to_celsius(fahrenheit),\n        expected_celsius,\n        rel_tol=1e-9,\n    )\n\n\n@pytest.mark.parametrize(\n    \"value, from_u, to_u, expected\",\n    [\n        (0, \"C\", \"F\", 32),\n        (100, \"C\", \"F\", 212),\n        (-40, \"F\", \"C\", -40),\n        (212, \"F\", \"C\", 100),\n        (25, \"C\", \"C\", 25),  # identity conversion\n        (77, \"F\", \"F\", 77),\n    ],\n)\ndef test_convert_basic(value, from_u, to_u, expected):\n    result = TemperatureConverter.convert(value, from_u, to_u)\n    assert math.isclose(result, expected, rel_tol=1e-9)\n\n\ndef test_convert_case_insensitivity():\n    assert TemperatureConverter.convert(0, \"c\", \"f\") == 32\n    assert TemperatureConverter.convert(32, \"F\", \"c\") == 0\n\n\ndef test_convert_invalid_units():\n    with pytest.raises(ValueError, match=\"Unsupported source unit\"):\n        TemperatureConverter.convert(10, \"K\", \"C\")\n    with pytest.raises(ValueError, match=\"Unsupported target unit\"):\n        TemperatureConverter.convert(10, \"C\", \"X\")\n\n\ndef test_convert_non_finite():\n    with pytest.raises(ValueError, match=\"finite\"):\n        TemperatureConverter.convert(float(\"inf\"), \"C\", \"F\")\n    with pytest.raises(ValueError, match=\"finite\"):\n        TemperatureConverter.convert(float(\"-nan\"), \"F\", \"C\")\n```\n\n### FILE: pyproject.toml\n```toml\n[project]\nname = \"temperature_converter\"\nversion = \"0.1.0\"\ndescription = \"A simple CLI for converting temperatures between Celsius and Fahrenheit.\"\nreadme = \"README.md\"\nrequires-python = \">=3.8\"\nlicense = {text = \"MIT\"}\nauthors = [\n    {name = \"Your Name\", email = \"you@example.com\"},\n]\nkeywords = [\"temperature\", \"converter\", \"cli\"]\nclassifiers = [\n    \"Programming Language :: Python :: 3\",\n    \"License :: OSI Approved :: MIT License\",\n    \"Operating System :: OS Independent\",\n]\n\n[project.scripts]\ntemp-convert = \"temperature_converter.cli:main\"\n\n[tool.pytest.ini_options]\ntestpaths = [\"tests\"]\naddopts = \"-ra -q\"\n```\n\n### FILE: README.md\n```markdown\n# Temperature Converter\n\nA tiny command\u2011line utility that converts temperatures between Celsius and Fahrenheit.\n\n## Installation\n\n```bash\npip install .\n```\n\nThe package provides a console script called `temp-convert`.\n\n## Usage\n\n```bash\ntemp-convert -t 100 -f C -o F\n# \u2192 212.00 \u00b0F\n```\n\n### Arguments\n\n| Option | Alias | Description |\n|--------|-------|-------------|\n| `--temperature` | `-t` | Numeric temperature value (required). |\n| `--from-unit`   | `-f` | Source unit: `C` or `F` (case\u2011insensitive). |\n| `--to-unit`     | `-o` | Target unit: `C` or `F` (case\u2011insensitive). |\n| `--version`     | \u2014     | Show version and exit. |\n\n## Running the Tests\n\n```bash\npytest\n```\n\nAll tests are pure\u2011function unit tests and should pass on any platform with Python\u202f3.8+.\n\n## License\n\nMIT License \u2013 see the `LICENSE` file for details.\n```\n\n### FILE: LICENSE\n```text\nMIT License\n\nCopyright (c) 2026\n\nPermission is hereby granted, free of charge, to any person obtaining a copy\nof this software and associated documentation files (the \"Software\"), to deal\nin the Software without restriction, including without limitation the rights\nto use, copy, modify, merge, publish, distribute, sublicense, and/or sell\ncopies of the Software, and to permit persons to whom the Software is\nfurnished to do so, subject to the following conditions:\n\n[... full MIT license text ...]\n```\n```",
+      "files": [
+        "/workspaces/ai-dev-team_v2/workspace/temperature_converter/__init__.py",
+        "/workspaces/ai-dev-team_v2/workspace/temperature_converter/core.py",
+        "/workspaces/ai-dev-team_v2/workspace/temperature_converter/cli.py",
+        "/workspaces/ai-dev-team_v2/workspace/tests/__init__.py",
+        "/workspaces/ai-dev-team_v2/workspace/tests/test_core.py",
+        "/workspaces/ai-dev-team_v2/workspace/pyproject.toml",
+        "/workspaces/ai-dev-team_v2/workspace/README.md",
+        "/workspaces/ai-dev-team_v2/workspace/LICENSE"
+      ]
+    },
+    {
+      "agent": "Reviewer",
+      "round": 1,
+      "output": ""
+    },
+    {
+      "agent": "Developer",
+      "round": 1,
+      "output": "### FILE: temperature_converter/core.py\n```python\n\"\"\"Core conversion logic for temperature values.\n\nProvides a small, pure\u2011Python API that can be used programmatically\nor from the command\u2011line interface.\n\"\"\"\n\nfrom __future__ import annotations\n\nimport math\nfrom typing import Final, Union\n\nNumber = Union[int, float]\n\n__all__ = [\"TemperatureConverter\"]\n\n\nclass TemperatureConverter:\n    \"\"\"Utility class offering temperature conversion methods.\"\"\"\n\n    _VALID_UNITS: Final[set[str]] = {\"C\", \"F\"}\n\n    @staticmethod\n    def _validate_number(value: Number) -> None:\n        \"\"\"Validate that *value* is a finite number.\n\n        Args:\n            value: The value to validate.\n\n        Raises:\n            ValueError: If *value* is not a finite int or float.\n        \"\"\"\n        if not isinstance(value, (int, float)):\n            raise ValueError(\"Temperature must be a numeric type.\")\n        if not math.isfinite(value):\n            raise ValueError(\"Temperature must be a finite number.\")\n\n    @staticmethod\n    def celsius_to_fahrenheit(celsius: Number) -> float:\n        \"\"\"Convert Celsius to Fahrenheit.\n\n        Args:\n            celsius: Temperature in degrees Celsius.\n\n        Returns:\n            Temperature in degrees Fahrenheit.\n\n        Raises:\n            ValueError: If *celsius* is not a finite number.\n        \"\"\"\n        TemperatureConverter._validate_number(celsius)\n        return (celsius * 9.0 / 5.0) + 32.0\n\n    @staticmethod\n    def fahrenheit_to_celsius(fahrenheit: Number) -> float:\n        \"\"\"Convert Fahrenheit to Celsius.\n\n        Args:\n            fahrenheit: Temperature in degrees Fahrenheit.\n\n        Returns:\n            Temperature in degrees Celsius.\n\n        Raises:\n            ValueError: If *fahrenheit* is not a finite number.\n        \"\"\"\n        TemperatureConverter._validate_number(fahrenheit)\n        return (fahrenheit - 32.0) * 5.0 / 9.0\n\n    @classmethod\n    def convert(cls, value: Number, from_unit: str, to_unit: str) -> float:\n        \"\"\"Convert a temperature from one unit to another.\n\n        Supported units are Celsius (``C``) and Fahrenheit (``F``).  The\n        comparison is case\u2011insensitive.\n\n        Args:\n            value: The numeric temperature to convert.\n            from_unit: Source unit, ``'C'`` or ``'F'``.\n            to_unit: Target unit, ``'C'`` or ``'F'``.\n\n        Returns:\n            The converted temperature.\n\n        Raises:\n            ValueError: If either unit is unsupported or the value is not\n                a finite number.\n        \"\"\"\n        cls._validate_number(value)\n\n        from_u = from_unit.upper()\n        to_u = to_unit.upper()\n\n        if from_u not in cls._VALID_UNITS:\n            raise ValueError(f\"Unsupported source unit: {from_unit!r}\")\n        if to_u not in cls._VALID_UNITS:\n            raise ValueError(f\"Unsupported target unit: {to_unit!r}\")\n\n        if from_u == to_u:\n            return float(value)\n\n        if from_u == \"C\" and to_u == \"F\":\n            return cls.celsius_to_fahrenheit(value)\n        if from_u == \"F\" and to_u == \"C\":\n            return cls.fahrenheit_to_celsius(value)\n\n        # This point should never be reached because all combos are covered.\n        raise ValueError(f\"Conversion from {from_unit!r} to {to_unit!r} is not supported.\")\n```\n\n### FILE: temperature_converter/cli.py\n```python\n\"\"\"Command\u2011line interface for the temperature_converter package.\"\"\"\n\nfrom __future__ import annotations\n\nimport argparse\nimport sys\nfrom importlib import metadata\n\nfrom .core import TemperatureConverter\n\n\ndef _get_version() -> str:\n    \"\"\"Retrieve the package version from metadata.\"\"\"\n    try:\n        return metadata.version(\"temperature_converter\")\n    except metadata.PackageNotFoundError:\n        # Fallback for editable installs where metadata may not be present yet.\n        return \"0.0.0\"\n\n\ndef build_parser() -> argparse.ArgumentParser:\n    \"\"\"Create and configure the argument parser.\"\"\"\n    parser = argparse.ArgumentParser(\n        prog=\"temp-convert\",\n        description=\"Convert temperatures between Celsius and Fahrenheit.\",\n    )\n    parser.add_argument(\n        \"-t\",\n        \"--temperature\",\n        type=float,\n        required=True,\n        help=\"Numeric temperature value to convert.\",\n    )\n    parser.add_argument(\n        \"-f\",\n        \"--from-unit\",\n        type=str.upper,\n        choices=[\"C\", \"F\"],\n        required=True,\n        help=\"Unit of the input temperature (C or F).\",\n    )\n    parser.add_argument(\n        \"-o\",\n        \"--to-unit\",\n        type=str.upper,\n        choices=[\"C\", \"F\"],\n        required=True,\n        help=\"Desired output unit (C or F).\",\n    )\n    parser.add_argument(\n        \"--version\",\n        action=\"version\",\n        version=f\"%(prog)s {_get_version()}\",\n        help=\"Show program's version number and exit.\",\n    )\n    return parser\n\n\ndef main(argv: list[str] | None = None) -> None:\n    \"\"\"Entry point for the console script.\"\"\"\n    parser = build_parser()\n    args = parser.parse_args(argv)\n\n    try:\n        result = TemperatureConverter.convert(\n            value=args.temperature,\n            from_unit=args.from_unit,\n            to_unit=args.to_unit,\n        )\n    except ValueError as exc:\n        parser.error(str(exc))\n\n    unit_symbol = \"\u00b0C\" if args.to_unit == \"C\" else \"\u00b0F\"\n    # Two decimal places provide a clean, readable output.\n    print(f\"{result:.2f} {unit_symbol}\")\n\n\nif __name__ == \"__main__\":\n    # When executed directly, forward sys.argv[1:] to ``main``.\n    main(sys.argv[1:])\n```",
+      "files": [
+        "/workspaces/ai-dev-team_v2/workspace/temperature_converter/__init__.py",
+        "/workspaces/ai-dev-team_v2/workspace/temperature_converter/core.py",
+        "/workspaces/ai-dev-team_v2/workspace/temperature_converter/cli.py",
+        "/workspaces/ai-dev-team_v2/workspace/tests/__init__.py",
+        "/workspaces/ai-dev-team_v2/workspace/tests/test_core.py",
+        "/workspaces/ai-dev-team_v2/workspace/pyproject.toml",
+        "/workspaces/ai-dev-team_v2/workspace/README.md",
+        "/workspaces/ai-dev-team_v2/workspace/LICENSE"
+      ]
+    },
+    {
+      "agent": "Reviewer",
+      "round": 2,
+      "output": ""
+    },
+    {
+      "agent": "Developer",
+      "round": 2,
+      "output": "### FILE: temperature_converter/__main__.py\n```python\n\"\"\"Entry point for ``python -m temperature_converter``.\"\"\"\n\nfrom .cli import main\n\nif __name__ == \"__main__\":\n    # Forward the command\u2011line arguments (excluding the module name) to the CLI.\n    import sys\n\n    main(sys.argv[1:])\n```",
+      "files": [
+        "/workspaces/ai-dev-team_v2/workspace/temperature_converter/__init__.py",
+        "/workspaces/ai-dev-team_v2/workspace/temperature_converter/core.py",
+        "/workspaces/ai-dev-team_v2/workspace/temperature_converter/cli.py",
+        "/workspaces/ai-dev-team_v2/workspace/tests/__init__.py",
+        "/workspaces/ai-dev-team_v2/workspace/tests/test_core.py",
+        "/workspaces/ai-dev-team_v2/workspace/pyproject.toml",
+        "/workspaces/ai-dev-team_v2/workspace/README.md",
+        "/workspaces/ai-dev-team_v2/workspace/LICENSE",
+        "/workspaces/ai-dev-team_v2/workspace/temperature_converter/__main__.py"
+      ]
+    },
+    {
+      "agent": "Security",
+      "round": 1,
+      "output": "APPROVED"
+    },
+    {
+      "agent": "Tester",
+      "output": "",
+      "files": []
+    },
+    {
+      "agent": "Orchestrator",
+      "action": "pytest",
+      "attempt": 1,
+      "passed": true,
+      "stdout": ".................                                                        [100%]\n",
+      "stderr": ""
+    }
+  ],
+  "status": "passed",
+  "run_number": 2,
+  "pytest_summary": ".................                                                        [100%]",
+  "source_files": 9,
+  "test_files": 0,
+  "review_rounds": 2,
+  "security_rounds": 1,
+  "test_attempts": 1,
+  "token_usage": {
+    "Researcher": {
+      "model": "openai/gpt-oss-20b",
+      "input_tokens": 1183,
+      "output_tokens": 1019,
+      "total_tokens": 2202,
+      "calls": 1,
+      "estimated_cost_usd": 0.00039442
+    },
+    "Architect": {
+      "model": "openai/gpt-oss-120b",
+      "input_tokens": 1034,
+      "output_tokens": 1774,
+      "total_tokens": 2808,
+      "calls": 1,
+      "estimated_cost_usd": 0.0012195
+    },
+    "Developer": {
+      "model": "openai/gpt-oss-120b",
+      "input_tokens": 6891,
+      "output_tokens": 4880,
+      "total_tokens": 11771,
+      "calls": 3,
+      "estimated_cost_usd": 0.00396165
+    },
+    "Reviewer": {
+      "model": "openai/gpt-oss-20b",
+      "input_tokens": 4677,
+      "output_tokens": 4096,
+      "total_tokens": 8773,
+      "calls": 2,
+      "estimated_cost_usd": 0.00157957
+    },
+    "Security": {
+      "model": "openai/gpt-oss-20b",
+      "input_tokens": 2533,
+      "output_tokens": 1004,
+      "total_tokens": 3537,
+      "calls": 1,
+      "estimated_cost_usd": 0.00049117
+    },
+    "Tester": {
+      "model": "openai/gpt-oss-20b",
+      "input_tokens": 2714,
+      "output_tokens": 2048,
+      "total_tokens": 4762,
+      "calls": 1,
+      "estimated_cost_usd": 0.00081795
+    }
+  },
+  "token_totals": {
+    "input_tokens": 19032,
+    "output_tokens": 14821,
+    "total_tokens": 33853,
+    "calls": 9,
+    "estimated_cost_usd": 0.00846427
+  }
+}
