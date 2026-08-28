@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+set -e
+
+TEAM_ROOT="/workspaces/ai-dev-team_v2"
+
+if [[ $# -eq 0 ]]; then
+  echo 'Usage: team "Describe the project you want the AI dev team to build"'
+  exit 1
+fi
+
+exec python3 "$TEAM_ROOT/orchestrator.py" "$@"

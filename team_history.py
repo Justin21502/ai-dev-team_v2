@@ -1,0 +1,334 @@
+from __future__ import annotations
+
+import json
+import os
+import sys
+from datetime import datetime
+from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parent
+HISTORY_PATH = ROOT / "workspace" / "run_history.json"
+
+
+def _color(text: str, code: str) -> str:
+    if not sys.stdout.isatty() or os.environ.get("NO_COLOR"):
+        return text
+    return f"\033[{code}m{text}\033[0m"
+
+
+def _short_model(model: str | None) -> str:
+    if not model:
+        return "—"
+    return model.split("/")[-1]
+
+
+def _format_timestamp(value: str | None) -> str:
+    if not value:
+        return "—"
+
+    try:
+        dt = datetime.fromisoformat(value)
+        local = dt.astimezone()
+        return local.strftime("%b %d %Y  %I:%M %p")
+    except (TypeError, ValueError):
+        return value
+
+
+def _load_history() -> list[dict]:
+    if not HISTORY_PATH.exists():
+        return []
+
+    try:
+        data = json.loads(HISTORY_PATH.read_text())
+    except (json.JSONDecodeError, OSError) as exc:
+        raise RuntimeError(
+            f"Could not read history file: {exc}"
+        ) from exc
+
+    if not isinstance(data, list):
+        raise RuntimeError(
+            "run_history.json does not contain a history list."
+        )
+
+    return data
+
+
+def _totals(run: dict) -> dict:
+    usage = run.get("usage") or {}
+    totals = usage.get("totals") or {}
+
+    return {
+        "input_tokens": totals.get("input_tokens", 0),
+        "output_tokens": totals.get("output_tokens", 0),
+        "total_tokens": totals.get(
+            "total_tokens",
+            run.get("total_tokens", 0),
+        ),
+        "calls": totals.get("calls", 0),
+        "estimated_cost": totals.get(
+            "estimated_cost",
+            run.get("estimated_cost", 0.0),
+        ),
+    }
+
+
+def _result_text(run: dict) -> str:
+    result = run.get("result") or run.get("status")
+
+    if not result:
+        return "—"
+
+    result = str(result).upper()
+
+    if result == "PASSED":
+        return _color(result, "1;92")
+
+    if result in {"FAILED", "TESTS_FAILED"}:
+        return _color(result, "1;91")
+
+    return result
+
+
+def show_history() -> None:
+    history = _load_history()
+
+    print()
+    print(_color("AI DEV TEAM — RUN HISTORY", "1;96"))
+    print()
+
+    if not history:
+        print("No saved runs yet.")
+        print()
+        return
+
+    headers = (
+        "RUN",
+        "RESULT",
+        "TOKENS",
+        "CALLS",
+        "COST",
+        "DATE",
+    )
+
+    rows = []
+
+    for run in reversed(history):
+        totals = _totals(run)
+
+        rows.append(
+            (
+                f"#{run.get('run', '—')}",
+                _result_text(run),
+                f"{totals['total_tokens']:,}",
+                str(totals["calls"]),
+                f"${totals['estimated_cost']:.6f}",
+                _format_timestamp(run.get("timestamp")),
+            )
+        )
+
+    widths = [len(x) for x in headers]
+
+    # ANSI color is only currently used in RESULT. The underlying raw
+    # result is short enough that fixed sizing keeps alignment clean.
+    for row in rows:
+        widths[0] = max(widths[0], len(row[0]))
+        widths[1] = max(widths[1], 12)
+        widths[2] = max(widths[2], len(row[2]))
+        widths[3] = max(widths[3], len(row[3]))
+        widths[4] = max(widths[4], len(row[4]))
+        widths[5] = max(widths[5], len(row[5]))
+
+    header_line = (
+        f"{headers[0]:<{widths[0]}}  "
+        f"{headers[1]:<{widths[1]}}  "
+        f"{headers[2]:>{widths[2]}}  "
+        f"{headers[3]:>{widths[3]}}  "
+        f"{headers[4]:>{widths[4]}}  "
+        f"{headers[5]:<{widths[5]}}"
+    )
+
+    print(_color(header_line, "1;37"))
+    print("─" * len(header_line))
+
+    for row in rows:
+        # RESULT may contain ANSI sequences, so pad it before coloring
+        # would normally be preferable. For compatibility with old
+        # history entries, normalize it here.
+        raw_result = (
+            run_result(row[1])
+        )
+
+        result_cell = raw_result.ljust(widths[1])
+
+        if raw_result == "PASSED":
+            result_cell = _color(result_cell, "1;92")
+        elif raw_result in {"FAILED", "TESTS_FAILED"}:
+            result_cell = _color(result_cell, "1;91")
+
+        print(
+            f"{row[0]:<{widths[0]}}  "
+            f"{result_cell}  "
+            f"{row[2]:>{widths[2]}}  "
+            f"{row[3]:>{widths[3]}}  "
+            f"{row[4]:>{widths[4]}}  "
+            f"{row[5]:<{widths[5]}}"
+        )
+
+    print()
+
+
+def run_result(value: str) -> str:
+    # Strip the known ANSI sequences produced by _result_text().
+    for code in ("1;92", "1;91"):
+        value = value.replace(f"\033[{code}m", "")
+    return value.replace("\033[0m", "")
+
+
+def show_run(run_number: int) -> None:
+    history = _load_history()
+
+    selected = next(
+        (
+            run
+            for run in history
+            if run.get("run") == run_number
+        ),
+        None,
+    )
+
+    if selected is None:
+        print(
+            f"No saved run #{run_number}.",
+            file=sys.stderr,
+        )
+        raise SystemExit(1)
+
+    totals = _totals(selected)
+    usage = selected.get("usage") or {}
+    agents = usage.get("agents") or {}
+
+    print()
+    print(_color(f"AI DEV TEAM — RUN #{run_number}", "1;96"))
+    print()
+
+    result = selected.get("result") or selected.get("status")
+    if result:
+        result = str(result).upper()
+        if result == "PASSED":
+            result = _color(result, "1;92")
+        elif result in {"FAILED", "TESTS_FAILED"}:
+            result = _color(result, "1;91")
+    else:
+        result = "—"
+
+    print(f"Result:      {result}")
+    print(f"Date:        {_format_timestamp(selected.get('timestamp'))}")
+
+    task = selected.get("task")
+    if task:
+        print(f"Task:        {task}")
+
+    pytest_summary = selected.get("pytest_summary")
+    if pytest_summary:
+        print(f"Tests:       {pytest_summary}")
+
+    print(f"Tokens:      {totals['total_tokens']:,}")
+    print(f"API calls:   {totals['calls']}")
+    print(f"Cost:        ${totals['estimated_cost']:.6f}")
+    print()
+
+    if not agents:
+        print("No per-agent usage data saved.")
+        print()
+        return
+
+    headers = (
+        "AGENT",
+        "MODEL",
+        "INPUT",
+        "OUTPUT",
+        "TOKENS",
+        "CALLS",
+        "COST",
+    )
+
+    agent_rows = []
+
+    for agent, data in agents.items():
+        agent_rows.append(
+            (
+                agent,
+                _short_model(data.get("model")),
+                f"{data.get('input_tokens', 0):,}",
+                f"{data.get('output_tokens', 0):,}",
+                f"{data.get('total_tokens', 0):,}",
+                str(data.get("calls", 0)),
+                f"${data.get('estimated_cost', 0.0):.6f}",
+            )
+        )
+
+    widths = [
+        max(
+            len(headers[i]),
+            max(len(row[i]) for row in agent_rows),
+        )
+        for i in range(len(headers))
+    ]
+
+    header_line = (
+        f"{headers[0]:<{widths[0]}}  "
+        f"{headers[1]:<{widths[1]}}  "
+        f"{headers[2]:>{widths[2]}}  "
+        f"{headers[3]:>{widths[3]}}  "
+        f"{headers[4]:>{widths[4]}}  "
+        f"{headers[5]:>{widths[5]}}  "
+        f"{headers[6]:>{widths[6]}}"
+    )
+
+    print(_color(header_line, "1;37"))
+    print("─" * len(header_line))
+
+    for row in agent_rows:
+        print(
+            f"{row[0]:<{widths[0]}}  "
+            f"{row[1]:<{widths[1]}}  "
+            f"{row[2]:>{widths[2]}}  "
+            f"{row[3]:>{widths[3]}}  "
+            f"{row[4]:>{widths[4]}}  "
+            f"{row[5]:>{widths[5]}}  "
+            f"{row[6]:>{widths[6]}}"
+        )
+
+    print()
+
+
+def main() -> None:
+    args = sys.argv[1:]
+
+    if not args:
+        show_history()
+        return
+
+    if len(args) == 1:
+        try:
+            run_number = int(args[0])
+        except ValueError:
+            print(
+                "Usage: team history [run_number]",
+                file=sys.stderr,
+            )
+            raise SystemExit(2)
+
+        show_run(run_number)
+        return
+
+    print(
+        "Usage: team history [run_number]",
+        file=sys.stderr,
+    )
+    raise SystemExit(2)
+
+
+if __name__ == "__main__":
+    main()
