@@ -131,8 +131,8 @@
     "task": "Build a simple Python command-line temperature converter that converts Celsius to Fahrenheit and Fahrenheit to Celsius. Include input validation and pytest tests.",
     "result": "passed",
     "pytest_summary": ".................                                                        [100%]",
-    "source_files": 9,
-    "test_files": 0,
+    "source_files": 7,
+    "test_files": 2,
     "review_rounds": 2,
     "security_rounds": 1,
     "test_attempts": 1
