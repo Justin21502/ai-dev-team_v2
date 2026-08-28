@@ -106,58 +106,6 @@ def get_client() -> OpenAI:
     return _client
 
 
-def _classify_api_failure(
-    exc: Exception,
-) -> str:
-    """Classify an API failure for retry/fallback decisions."""
-    status = getattr(
-        exc,
-        "status_code",
-        None,
-    )
-
-    message = str(exc).lower()
-
-    if status in {401, 403}:
-        return "auth"
-
-    if status == 404 or any(
-        term in message
-        for term in (
-            "model_not_found",
-            "model not found",
-            "does not exist",
-            "unsupported model",
-        )
-    ):
-        return "model"
-
-    if status in {
-        408,
-        409,
-        429,
-        500,
-        502,
-        503,
-        504,
-    }:
-        return "transient"
-
-    if any(
-        term in message
-        for term in (
-            "api key",
-            "authentication",
-            "unauthorized",
-            "forbidden",
-            "invalid key",
-        )
-    ):
-        return "auth"
-
-    return "fatal"
-
-
 def _is_retryable(exc: Exception) -> bool:
     status = getattr(exc, "status_code", None)
 
@@ -338,45 +286,17 @@ def chat(
             except Exception as exc:
 
                 last_error = exc
-                failure_type = _classify_api_failure(
-                    exc
-                )
 
-                if failure_type == "model":
-                    if candidate_index < len(candidates) - 1:
-                        events.emit(
-                            "TEAM_LOG",
-                            agent=agent_name,
-                            message=(
-                                f"Model '{candidate}' unavailable; "
-                                "trying fallback model."
-                            ),
-                        )
-                        break
+                if (
+                    _is_model_not_found(exc)
+                    and candidate_index < len(candidates) - 1
+                ):
+                    break
 
-                    raise
-
-                if failure_type in {
-                    "auth",
-                    "fatal",
-                }:
-                    raise
-
-                if failure_type != "transient":
-                    raise
-
-                if attempt >= MAX_RETRIES:
-                    if candidate_index < len(candidates) - 1:
-                        events.emit(
-                            "TEAM_LOG",
-                            agent=agent_name,
-                            message=(
-                                f"Model '{candidate}' exhausted retries; "
-                                "trying fallback model."
-                            ),
-                        )
-                        break
-
+                if (
+                    not _is_retryable(exc)
+                    or attempt >= MAX_RETRIES
+                ):
                     raise
 
                 delay = RETRY_BASE_SECONDS * (2**attempt)

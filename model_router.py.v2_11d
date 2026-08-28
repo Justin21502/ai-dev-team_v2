@@ -1,0 +1,148 @@
+"""Centralized model routing for the AI Dev Team.
+
+This module decides which model should be preferred for an agent call.
+Operational retries and provider fallback remain the responsibility of
+llm_client.py.
+"""
+
+from __future__ import annotations
+
+import os
+from dataclasses import dataclass
+
+from llm_client import FAST_MODEL, PRIMARY_MODEL
+
+
+ROLE_DEFAULT_TIERS = {
+    "Researcher": "fast",
+    "Architect": "primary",
+    "Developer": "primary",
+    "Reviewer": "fast",
+    "Security": "fast",
+    "Tester": "fast",
+    "Debugger": "primary",
+}
+
+
+ROLE_MODEL_ENV = {
+    "Researcher": "AI_TEAM_RESEARCHER_MODEL",
+    "Architect": "AI_TEAM_ARCHITECT_MODEL",
+    "Developer": "AI_TEAM_DEVELOPER_MODEL",
+    "Reviewer": "AI_TEAM_REVIEWER_MODEL",
+    "Security": "AI_TEAM_SECURITY_MODEL",
+    "Tester": "AI_TEAM_TESTER_MODEL",
+    "Debugger": "AI_TEAM_DEBUGGER_MODEL",
+}
+
+
+@dataclass(frozen=True)
+class ModelRoute:
+    """One model-routing decision."""
+
+    agent: str
+    model: str
+    tier: str
+    reason: str
+    escalated: bool = False
+
+
+def _default_model_for_tier(tier: str) -> str:
+    if tier == "fast":
+        return FAST_MODEL
+
+    return PRIMARY_MODEL
+
+
+def resolve_role_model(agent_name: str) -> str:
+    """Return the configured default model for one agent role."""
+    agent = str(agent_name or "Unknown").strip()
+
+    tier = ROLE_DEFAULT_TIERS.get(
+        agent,
+        "primary",
+    )
+
+    default_model = _default_model_for_tier(tier)
+
+    env_name = ROLE_MODEL_ENV.get(agent)
+
+    if env_name:
+        configured = os.environ.get(env_name)
+
+        if configured:
+            return configured
+
+    return default_model
+
+
+def route_model(
+    agent_name: str,
+    *,
+    attempt: int = 1,
+    force_primary: bool = False,
+    explicit_model: str | None = None,
+) -> ModelRoute:
+    """Choose the preferred model for one agent call."""
+    agent = str(agent_name or "Unknown").strip()
+
+    if explicit_model:
+        return ModelRoute(
+            agent=agent,
+            model=explicit_model,
+            tier="explicit",
+            reason="Explicit per-agent model override.",
+            escalated=False,
+        )
+
+    if force_primary:
+        return ModelRoute(
+            agent=agent,
+            model=PRIMARY_MODEL,
+            tier="primary",
+            reason="Primary model explicitly requested.",
+            escalated=True,
+        )
+
+    if attempt > 1:
+        return ModelRoute(
+            agent=agent,
+            model=PRIMARY_MODEL,
+            tier="primary",
+            reason=(
+                f"Escalated after attempt {attempt - 1}."
+            ),
+            escalated=True,
+        )
+
+    model = resolve_role_model(agent)
+
+    default_tier = ROLE_DEFAULT_TIERS.get(
+        agent,
+        "primary",
+    )
+
+    env_name = ROLE_MODEL_ENV.get(agent)
+
+    if (
+        env_name
+        and os.environ.get(env_name)
+    ):
+        reason = (
+            f"{agent} uses configured override "
+            f"{env_name}."
+        )
+        tier = "configured"
+    else:
+        reason = (
+            f"{agent} uses its default "
+            f"{default_tier} route."
+        )
+        tier = default_tier
+
+    return ModelRoute(
+        agent=agent,
+        model=model,
+        tier=tier,
+        reason=reason,
+        escalated=False,
+    )
