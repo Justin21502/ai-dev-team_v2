@@ -283,10 +283,8 @@ def _clean_workspace(workspace_dir: str):
 
     if workspace.exists():
         for child in workspace.iterdir():
-            # Persistent AI Dev Team state must survive project cleanup.
-            # run_history.json stores lightweight summaries while .team/
-            # stores richer per-run artifacts such as replay logs.
-            if child.name in {"run_history.json", ".team"}:
+            # Persistent AI Dev Team history must survive project cleanup.
+            if child.name == "run_history.json":
                 continue
 
             if child.is_dir():
@@ -670,16 +668,9 @@ IMPORTANT TESTING RULES:
         ),
     )
 
-    # Keep the traditional latest-run log for compatibility.
-    run_log_path = workspace / "run_log.json"
-    run_log_path.write_text(json.dumps(run_log, indent=2))
-
-    # Persist an immutable per-run copy for `team replay`.
-    replay_dir = workspace / ".team" / "runs"
-    replay_dir.mkdir(parents=True, exist_ok=True)
-
-    replay_path = replay_dir / f"{run_number}.json"
-    replay_path.write_text(json.dumps(run_log, indent=2))
+    (workspace / "run_log.json").write_text(
+        json.dumps(run_log, indent=2)
+    )
     events.emit(
         "TEAM_COMPLETED",
         message=run_log["status"],

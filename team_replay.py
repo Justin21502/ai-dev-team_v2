@@ -1,0 +1,334 @@
+from __future__ import annotations
+
+import json
+import os
+import re
+import sys
+from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parent
+WORKSPACE = ROOT / "workspace"
+RUNS_DIR = WORKSPACE / ".team" / "runs"
+
+
+def _color(text: str, code: str) -> str:
+    if not sys.stdout.isatty() or os.environ.get("NO_COLOR"):
+        return text
+    return f"\033[{code}m{text}\033[0m"
+
+
+def _load_run(run_number: int) -> dict:
+    path = RUNS_DIR / f"{run_number}.json"
+
+    if not path.exists():
+        print(
+            f"No replay data saved for run #{run_number}.",
+            file=sys.stderr,
+        )
+        raise SystemExit(1)
+
+    try:
+        data = json.loads(path.read_text())
+    except (OSError, json.JSONDecodeError) as exc:
+        print(
+            f"Could not read replay data for run #{run_number}: {exc}",
+            file=sys.stderr,
+        )
+        raise SystemExit(1)
+
+    if not isinstance(data, dict):
+        print(
+            f"Replay data for run #{run_number} is invalid.",
+            file=sys.stderr,
+        )
+        raise SystemExit(1)
+
+    return data
+
+
+def _first_line(value: str | None) -> str:
+    if not value:
+        return ""
+
+    for line in str(value).splitlines():
+        line = line.strip()
+        if line:
+            return line
+
+    return ""
+
+
+def _extract_file_count(step: dict) -> int:
+    files = step.get("files")
+
+    if isinstance(files, list):
+        return len(files)
+
+    if isinstance(files, dict):
+        return len(files)
+
+    return 0
+
+
+def _pytest_summary(step: dict, run: dict) -> str:
+    # Prefer the authoritative summary saved on the final run.
+    if step.get("passed") and run.get("pytest_summary"):
+        return str(run["pytest_summary"])
+
+    stdout = str(step.get("stdout") or "")
+    stderr = str(step.get("stderr") or "")
+
+    lines = [
+        line.strip()
+        for line in (stdout + "\n" + stderr).splitlines()
+        if line.strip()
+    ]
+
+    summary_terms = (
+        " passed",
+        " failed",
+        " error",
+        " errors",
+        " skipped",
+        " xfailed",
+        " xpassed",
+    )
+
+    for line in reversed(lines):
+        lowered = " " + line.lower()
+
+        if any(term in lowered for term in summary_terms):
+            return line
+
+    # Quiet pytest can emit only dots plus [100%].
+    progress = ""
+
+    for line in lines:
+        if "%" not in line:
+            continue
+
+        before_percent = line.split("[", 1)[0]
+        progress += "".join(
+            char for char in before_percent
+            if char in ".FEsxX"
+        )
+
+    if progress:
+        parts = []
+
+        counts = (
+            (progress.count("."), "passed"),
+            (progress.count("F"), "failed"),
+            (progress.count("E"), "error"),
+            (progress.count("s"), "skipped"),
+            (progress.count("x"), "xfailed"),
+            (progress.count("X"), "xpassed"),
+        )
+
+        for count, label in counts:
+            if not count:
+                continue
+
+            if label == "error" and count != 1:
+                label = "errors"
+
+            parts.append(f"{count} {label}")
+
+        if parts:
+            return ", ".join(parts)
+
+    if lines:
+        return lines[-1]
+
+    return "pytest completed"
+
+
+def _review_result(output: str | None) -> str:
+    first = _first_line(output)
+
+    if not first:
+        return "Review completed"
+
+    if first.upper().startswith("APPROVED"):
+        return "Approved"
+
+    return "Changes requested"
+
+
+def _security_result(output: str | None) -> str:
+    first = _first_line(output)
+
+    if not first:
+        return "Security review completed"
+
+    if first.upper().startswith("APPROVED"):
+        return "Approved"
+
+    return "Issues found"
+
+
+def _step_description(step: dict, run: dict) -> tuple[str, str]:
+    agent = str(step.get("agent") or "Unknown")
+    action = str(step.get("action") or "")
+    round_number = step.get("round")
+    attempt = step.get("attempt")
+
+    if action == "pytest":
+        passed = bool(step.get("passed"))
+        title = "Pytest"
+
+        if attempt is not None:
+            title += f" — Attempt {attempt}"
+
+        status = (
+            _color("PASSED", "1;92")
+            if passed
+            else _color("FAILED", "1;91")
+        )
+
+        return (
+            title,
+            f"{status} — {_pytest_summary(step, run)}",
+        )
+
+    if agent == "Researcher":
+        return "Researcher", "Research completed"
+
+    if agent == "Architect":
+        return "Architect", "Architecture completed"
+
+    if agent == "Reviewer":
+        title = "Reviewer"
+
+        if round_number is not None:
+            title += f" — Round {round_number}"
+
+        return title, _review_result(step.get("output"))
+
+    if agent == "Security":
+        title = "Security"
+
+        if round_number is not None:
+            title += f" — Round {round_number}"
+
+        return title, _security_result(step.get("output"))
+
+    if agent in {"Developer", "Debugger"}:
+        title = agent
+
+        if round_number is not None:
+            title += f" — Round {round_number}"
+
+        count = _extract_file_count(step)
+
+        if count:
+            noun = "file" if count == 1 else "files"
+            return title, f"{count} application {noun} available"
+
+        return title, "Application updated"
+
+    if agent == "Tester":
+        count = _extract_file_count(step)
+
+        if count:
+            noun = "file" if count == 1 else "files"
+            return "Tester", f"{count} test {noun} written"
+
+        return "Tester", "Tests written"
+
+    title = agent
+
+    if round_number is not None:
+        title += f" — Round {round_number}"
+
+    return title, _first_line(step.get("output")) or "Completed"
+
+
+def show_replay(run_number: int) -> None:
+    run = _load_run(run_number)
+    steps = run.get("steps") or []
+
+    print()
+    print(
+        _color(
+            f"AI DEV TEAM — REPLAY RUN #{run_number}",
+            "1;96",
+        )
+    )
+    print()
+
+    task = run.get("task")
+
+    if task:
+        print(f"Task: {task}")
+        print()
+
+    if not steps:
+        print("No execution steps were saved for this run.")
+        print()
+        return
+
+    for index, step in enumerate(steps, start=1):
+        if not isinstance(step, dict):
+            continue
+
+        title, description = _step_description(step, run)
+
+        print(
+            _color(
+                f"[{index:02d}] {title}",
+                "1;37",
+            )
+        )
+        print(f"     {description}")
+        print()
+
+    result = str(run.get("status") or run.get("result") or "unknown").upper()
+
+    if result == "PASSED":
+        result = _color(result, "1;92")
+    elif result in {"FAILED", "TESTS_FAILED"}:
+        result = _color(result, "1;91")
+
+    print(f"RESULT: {result}")
+
+    pytest_summary = run.get("pytest_summary")
+
+    if pytest_summary:
+        print(f"TESTS:  {pytest_summary}")
+
+    print()
+
+
+def main() -> None:
+    args = sys.argv[1:]
+
+    if len(args) != 1:
+        print(
+            "Usage: team replay <run_number>",
+            file=sys.stderr,
+        )
+        raise SystemExit(1)
+
+    try:
+        run_number = int(args[0])
+    except ValueError:
+        print(
+            f"Invalid run number: {args[0]}",
+            file=sys.stderr,
+        )
+        raise SystemExit(1)
+
+    if run_number < 1:
+        print(
+            "Run number must be greater than zero.",
+            file=sys.stderr,
+        )
+        raise SystemExit(1)
+
+    show_replay(run_number)
+
+
+if __name__ == "__main__":
+    main()
